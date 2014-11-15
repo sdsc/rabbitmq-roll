@@ -1,6 +1,6 @@
 PKGROOT            = /opt/rabbitmq
 NAME               = rabbitmq
-VERSION            = 1.0
+VERSION            = 3.4.1
 RELEASE            = 1
 
 SRC_SUBDIR         = rabbitmq

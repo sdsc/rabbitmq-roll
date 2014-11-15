@@ -66,17 +66,15 @@ include pull.mk
 build: $(SRC_DIRS)
 	( \
 	  cd $(SOURCE_DIR); \
-	  ./configure --prefix=$(PKGROOT); \
-	  $(MAKE); \
+	  mkdir -p $(REDHAT.ROOT)/RPMS/noarch/ ;\
+	  mkdir -p $(REDHAT.ROOT)/RPMS/x86_64/ ;\
+	  cp -av *.noarch.rpm $(REDHAT.ROOT)/RPMS/noarch/ ;\
+	  cp -av *.x86_64.rpm  $(REDHAT.ROOT)/RPMS/x86_64/ ;\
 	)
 	@echo "::: Package $(NAME) build complete :::"
 	
 install::
-	mkdir -p $(ROOT)/$(PKGROOT)/$(NAME)
-	( \
-	  cd $(SOURCE_DIR); \
-	  $(MAKE) prefix=$(ROOT)/$(PKGROOT) install; \
-	)
+	mkdir -p $(ROOT)/$(PKGROOT)
 	@echo "::: Package $(NAME) install complete :::"
 
 clean::
