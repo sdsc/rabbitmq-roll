@@ -19,14 +19,23 @@
 	</changelog>
 
 	<!-- add edges here -->
+	<edge from="server">
+		<to>rabbitmq-server</to>
+	</edge>
+
+	<!-- add edges here -->
 	<edge from="base">
-		<to>rabbitmq-base</to>
+		<to>rabbitmq-common</to>
 	</edge>
 
 	<!-- enforce post section ordering -->
 	<!-- rabbitmq-base post sections execute after base post sections -->
+	<order head="server">
+		<tail>rabbitmq-server</tail>
+	</order>
+
 	<order head="base">
-		<tail>rabbitmq-base</tail>
+		<tail>rabbitmq-common</tail>
 	</order>
 
 </graph>
