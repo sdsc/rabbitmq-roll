@@ -26,9 +26,9 @@
         # start the server and set up user credential
         /sbin/service rabbitmq-server start
         admin_pass=$(&lt; /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c26)
+        /usr/sbin/rabbitmqctl delete_vhost /
         /usr/sbin/rabbitmqctl add_user admin ${admin_pass}
         /usr/sbin/rabbitmqctl set_user_tags admin administrator
-        /usr/sbin/rabbitmqctl set_permissions -p / admin ".*" ".*" ".*"
         /usr/sbin/rabbitmqctl delete_user guest
         echo "&Kickstart_PrivateHostname;" &gt; /opt/rocks/etc/rabbitmq.conf
         echo "${admin_pass}" &gt; /opt/rocks/etc/rabbitmq_admin.conf
