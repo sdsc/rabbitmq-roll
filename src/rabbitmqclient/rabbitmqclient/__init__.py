@@ -183,6 +183,7 @@ class RabbitMQCommonClient:
         self.exchange_type = exchange_type
         self.routing_key = locator.NODE_NAME
         self.sent_msg = {}
+        self.heartbeat = 60
 
     def connect(self):
         """This method connects to RabbitMQ, returning the connection handle.
@@ -198,9 +199,11 @@ class RabbitMQCommonClient:
             try:
                 credentials = pika.PlainCredentials(self._username, self._pw)
                 parameters = pika.ConnectionParameters(self._url,
-                                                       5672,
+                                                       5671,
                                                        self._vhost,
-                                                       credentials)
+                                                       credentials, 
+                                                       ssl=True,
+                                                       heartbeat_interval = self.heartbeat)
 
                 sel_con = pika.adapters.tornado_connection.TornadoConnection(parameters,
                                      self.on_connection_open,
