@@ -161,7 +161,7 @@ class RabbitMQCommonClient:
     LOGGER = logging.getLogger(__name__)
     REQUEUE_TIMEOUT = 10
 
-    def __init__(self, exchange, exchange_type, username, vhost, process_message=None, on_open=None):
+    def __init__(self, exchange, exchange_type, username, vhost, process_message=None, on_open=None, routing_key = None, queue_name = "", ssl = True, qos_prefetch = None):
         """Create a new instance of the consumer class, passing in the AMQP
         URL used to connect to RabbitMQ.
 
@@ -181,9 +181,16 @@ class RabbitMQCommonClient:
         self.on_connection_open_client=on_open
         self.exchange = exchange
         self.exchange_type = exchange_type
-        self.routing_key = locator.NODE_NAME
+        if(routing_key == None):
+            self.routing_key = locator.NODE_NAME
+        else:
+            self.routing_key = routing_key
         self.sent_msg = {}
         self.heartbeat = 60
+        self.queue_name = queue_name
+        self.ssl = ssl
+        self.port = 5671 if ssl else 5672
+        self.qos_prefetch = qos_prefetch
 
     def connect(self):
         """This method connects to RabbitMQ, returning the connection handle.
@@ -199,10 +206,10 @@ class RabbitMQCommonClient:
             try:
                 credentials = pika.PlainCredentials(self._username, self._pw)
                 parameters = pika.ConnectionParameters(self._url,
-                                                       5671,
+                                                       self.port,
                                                        self._vhost,
                                                        credentials, 
-                                                       ssl=True,
+                                                       ssl = self.ssl,
                                                        heartbeat_interval = self.heartbeat)
 
                 sel_con = pika.adapters.tornado_connection.TornadoConnection(parameters,
@@ -213,6 +220,7 @@ class RabbitMQCommonClient:
                     sel_con.add_on_open_callback(self.on_connection_open_client)
                 return sel_con
             except:
+                self.LOGGER.exception("Error connecting rabbitmq server at %s"%self._url)
                 time.sleep(5)
                 pass
 
@@ -304,6 +312,8 @@ class RabbitMQCommonClient:
         self._channel = channel
         self._channel.add_on_close_callback(self.on_channel_closed)
         self._channel.add_on_return_callback(self.on_return_callback)
+        if(self.qos_prefetch):
+            self._channel.basic_qos(prefetch_count = self.qos_prefetch);
         self.setup_exchange(self.exchange)
 
     def setup_exchange(self, exchange_name):
@@ -328,7 +338,7 @@ class RabbitMQCommonClient:
         """
         self.LOGGER.info('Exchange declared')
         self.LOGGER.info('Declaring queue')
-        self._channel.queue_declare(self.on_queue_declareok, auto_delete=True, exclusive=True)
+        self._channel.queue_declare(self.on_queue_declareok, queue = self.queue_name, auto_delete=(self.queue_name == ""), exclusive=(self.queue_name == ""))
 
     def on_queue_declareok(self, method_frame):
         """Method invoked by pika when the Queue.Declare RPC call made in
@@ -376,7 +386,7 @@ class RabbitMQCommonClient:
         if method_frame[2].message_id in self.sent_msg.keys():
             self.sent_msg.pop(method_frame[2].message_id)()
 
-    def publish_message(self, message, routing_key=None, reply_to=None, exchange=None, correlation_id=None, on_fail=None):
+    def publish_message(self, message, routing_key=None, reply_to=None, exchange=None, correlation_id=None, on_fail=None, type=None):
         """If the class is not stopping, publish a message to RabbitMQ,
         appending a list of deliveries with the message number that was sent.
         This list will be used to check for delivery confirmations in the
@@ -384,11 +394,11 @@ class RabbitMQCommonClient:
         """
         if(exchange==None):
             exchange=self.exchange
-        properties = pika.BasicProperties(app_id='rocks.ImgStorageClient',
-                                          content_type='application/json',
+        properties = pika.BasicProperties(app_id='rocks.RabbitMQClient',
                                           reply_to=reply_to,
                                           message_id=str(uuid.uuid4()),
                                           correlation_id=correlation_id,
+                                          type=type
                                           )
         self._channel.basic_publish(exchange, routing_key,
                                     message,

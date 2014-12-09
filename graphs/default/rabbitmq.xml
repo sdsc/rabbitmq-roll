@@ -19,7 +19,7 @@
 	</changelog>
 
 	<!-- add edges here -->
-	<edge from="server">
+	<edge from="base" cond="RABBITMQ_Server">
 		<to>rabbitmq-server</to>
 	</edge>
 
@@ -30,7 +30,7 @@
 
 	<!-- enforce post section ordering -->
 	<!-- rabbitmq-base post sections execute after base post sections -->
-	<order head="server">
+	<order head="base">
 		<tail>rabbitmq-server</tail>
 	</order>
 
