@@ -24,6 +24,8 @@
 
 
     <post>
+        mkdir -p /etc/pki/rabbitmq
+
 <file name="/etc/rabbitmq/rabbitmq.config" perms="644">
 [
   {rabbit, [
@@ -93,7 +95,6 @@ keyUsage = keyEncipherment
 extendedKeyUsage = 1.3.6.1.5.5.7.3.1
 </file>
 
-        mkdir -p /etc/pki/rabbitmq
         cd /etc/pki/rabbitmq
         /usr/bin/openssl req -x509 -config /etc/pki/rabbitmq/openssl.cnf -newkey rsa:2048 -days 3650 \
             -out cacert.pem -keyout cakey.pem -outform PEM -subj /CN=MyCA/ -nodes
