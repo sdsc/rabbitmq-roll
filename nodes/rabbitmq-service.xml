@@ -22,7 +22,9 @@
 	<package>rabbitmq-server</package>
 
 
-    <file name="/etc/rabbitmq/rabbitmq.config" perms="644">
+
+    <post>
+<file name="/etc/rabbitmq/rabbitmq.config" perms="644">
 [
   {rabbit, [
      {ssl_listeners, [5671]},
@@ -33,12 +35,67 @@
                     {fail_if_no_peer_cert,false}]}
    ]}
 ]. 
-    </file>
+</file>
 
-    <post>
+<file name="/etc/pki/rabbitmq/openssl.cnf" perms="600">
+[ ca ]
+default_ca = testca
+
+[ testca ]
+dir = .
+certificate = $dir/cacert.pem
+database = $dir/index.txt
+new_certs_dir = $dir/certs
+private_key = $dir/private/cakey.pem
+serial = $dir/serial
+
+default_crl_days = 7
+default_days = 3650
+default_md = sha1
+
+policy = testca_policy
+x509_extensions = certificate_extensions
+
+[ testca_policy ]
+commonName = supplied
+stateOrProvinceName = optional
+countryName = optional
+emailAddress = optional
+organizationName = optional
+organizationalUnitName = optional
+
+[ certificate_extensions ]
+basicConstraints = CA:false
+
+[ req ]
+default_bits = 2048
+default_keyfile = ./private/cakey.pem
+default_md = sha1
+prompt = yes
+distinguished_name = root_ca_distinguished_name
+x509_extensions = root_ca_extensions
+
+[ root_ca_distinguished_name ]
+commonName = hostname
+
+[ root_ca_extensions ]
+basicConstraints = CA:true
+keyUsage = keyCertSign, cRLSign
+
+[ client_ca_extensions ]
+basicConstraints = CA:false
+keyUsage = digitalSignature
+extendedKeyUsage = 1.3.6.1.5.5.7.3.2
+
+[ server_ca_extensions ]
+basicConstraints = CA:false
+keyUsage = keyEncipherment
+extendedKeyUsage = 1.3.6.1.5.5.7.3.1
+</file>
+
         mkdir -p /etc/pki/rabbitmq
         cd /etc/pki/rabbitmq
-        /usr/bin/openssl req -x509 -config /etc/security/ca/ca.cfg -newkey rsa:2048 -days 3650 \
+        /usr/bin/openssl req -x509 -config /etc/pki/rabbitmq/openssl.cnf -newkey rsa:2048 -days 3650 \
             -out cacert.pem -keyout cakey.pem -outform PEM -subj /CN=MyCA/ -nodes
         /usr/bin/openssl req -newkey rsa:2048 -keyout key.pem -nodes -x509 -days 3650 -out cert.pem \
             -subj "/C=US/ST=CA/L=San Diego/O=UCSD/OU=SDSC/CN=&Kickstart_PublicHostname;"
@@ -53,18 +110,9 @@
         /sbin/service rabbitmq-server start
         admin_pass=$(&lt; /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c26)
         /usr/sbin/rabbitmqctl delete_vhost /
-        /usr/sbin/rabbitmqctl add_user admin ${admin_pass}
+        /usr/sbin/rabbitmqctl add_user admin ${admin_pass} &amp;&amp; echo "${admin_pass}" &gt; /opt/rocks/etc/rabbitmq_admin.conf
         /usr/sbin/rabbitmqctl set_user_tags admin administrator
         /usr/sbin/rabbitmqctl delete_user guest
-        echo "&Kickstart_PrivateHostname;" &gt; /opt/rocks/etc/rabbitmq.conf
-        echo "${admin_pass}" &gt; /opt/rocks/etc/rabbitmq_admin.conf
-        chmod 400 /opt/rocks/etc/rabbitmq.conf
-        chmod 400 /opt/rocks/etc/rabbitmq_admin.conf
-
-
-        # adding rabbitmq to 411 so we push the password to the nodes
-        echo "FILES_NOCOMMENT += /opt/rocks/etc/rabbitmq.conf" &gt;&gt; /var/411/Files.mk
-        /usr/bin/make -C /var/411 411.mk
     </post>
 
 

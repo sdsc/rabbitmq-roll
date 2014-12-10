@@ -17,50 +17,10 @@
 	$Log$
 	</changelog>
 
-	<package>rabbitmq</package>
-	<package>erlang</package>
-	<package>rabbitmq-server</package>
-
-
-    <file name="/etc/rabbitmq/rabbitmq.config" perms="644">
-[
-  {rabbit, [
-     {ssl_listeners, [5671]},
-     {ssl_options, [{cacertfile,"/etc/pki/rabbitmq/cacert.pem"},
-                    {certfile,"/etc/pki/rabbitmq/cert.pem"},
-                    {keyfile,"/etc/pki/rabbitmq/key.pem"},
-                    {verify,verify_peer},
-                    {fail_if_no_peer_cert,false}]}
-   ]}
-]. 
-    </file>
-
     <post>
-        mkdir -p /etc/pki/rabbitmq
-        cd /etc/pki/rabbitmq
-        /usr/bin/openssl req -x509 -config /etc/security/ca/ca.cfg -newkey rsa:2048 -days 3650 \
-            -out cacert.pem -keyout cakey.pem -outform PEM -subj /CN=MyCA/ -nodes
-        /usr/bin/openssl req -newkey rsa:2048 -keyout key.pem -nodes -x509 -days 3650 -out cert.pem \
-            -subj "/C=US/ST=CA/L=San Diego/O=UCSD/OU=SDSC/CN=&Kickstart_PublicHostname;"
-        /bin/chmod 770 /etc/pki/rabbitmq
-        /bin/chmod 660 /etc/pki/rabbitmq/*
-        /bin/chown rabbitmq:rabbitmq /etc/pki/rabbitmq -R
-
-        /sbin/chkconfig rabbitmq-server on
-        /usr/lib/rabbitmq/bin/rabbitmq-plugins enable rabbitmq_management --offline
-
-        # start the server and set up user credential
-        /sbin/service rabbitmq-server start
-        admin_pass=$(&lt; /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c26)
-        /usr/sbin/rabbitmqctl delete_vhost /
-        /usr/sbin/rabbitmqctl add_user admin ${admin_pass}
-        /usr/sbin/rabbitmqctl set_user_tags admin administrator
-        /usr/sbin/rabbitmqctl delete_user guest
-        echo "&Kickstart_PrivateHostname;" &gt; /opt/rocks/etc/rabbitmq.conf
-        echo "${admin_pass}" &gt; /opt/rocks/etc/rabbitmq_admin.conf
+	RabbitMQServiceNode=$(/opt/rocks/bin/rocks list host attr | /bin/awk -F: '/RABBITMQ_Server /{print $1}')
+        echo $RabbitMQServiceNode &gt; /opt/rocks/etc/rabbitmq.conf
         chmod 400 /opt/rocks/etc/rabbitmq.conf
-        chmod 400 /opt/rocks/etc/rabbitmq_admin.conf
-
 
         # adding rabbitmq to 411 so we push the password to the nodes
         echo "FILES_NOCOMMENT += /opt/rocks/etc/rabbitmq.conf" &gt;&gt; /var/411/Files.mk

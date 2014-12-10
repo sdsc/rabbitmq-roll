@@ -20,12 +20,16 @@
 
 	<!-- add edges here -->
 	<edge from="base" cond="RABBITMQ_Server">
-		<to>rabbitmq-server</to>
+		<to>rabbitmq-service</to>
 	</edge>
 
 	<!-- add edges here -->
 	<edge from="base">
 		<to>rabbitmq-common</to>
+	</edge>
+
+	<edge from="server">
+		<to>rabbitmq-server</to>
 	</edge>
 
 	<!-- enforce post section ordering -->
