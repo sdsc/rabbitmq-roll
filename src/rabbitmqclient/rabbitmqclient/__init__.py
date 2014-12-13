@@ -161,7 +161,7 @@ class RabbitMQCommonClient:
     LOGGER = logging.getLogger(__name__)
     REQUEUE_TIMEOUT = 10
 
-    def __init__(self, exchange, exchange_type, username, vhost, process_message=None, on_open=None, routing_key = None, queue_name = "", ssl = True, qos_prefetch = None):
+    def __init__(self, exchange, exchange_type, username, vhost, process_message=None, on_open=None, routing_key = None, queue_name = "", ssl = True, qos_prefetch = None, no_ack = True):
         """Create a new instance of the consumer class, passing in the AMQP
         URL used to connect to RabbitMQ.
 
@@ -177,6 +177,7 @@ class RabbitMQCommonClient:
         self._pw = locator.RABBITMQ_PW
         self._username = username
         self._vhost = vhost
+        self.no_ack = no_ack
         self.process_message = process_message
         self.on_connection_open_client=on_open
         self.exchange = exchange
@@ -429,12 +430,12 @@ class RabbitMQCommonClient:
 
         ret = None
         if self.process_message:
-            ret = self.process_message(properties, body)
+            ret = self.process_message(properties, body, basic_deliver)
 
         if(ret == False):
             self._connection.add_timeout(self.REQUEUE_TIMEOUT, lambda: self._channel.basic_nack(basic_deliver.delivery_tag))
             self.LOGGER.debug('Nacked message %s'%basic_deliver.delivery_tag)
-        else:
+        elif(self.no_ack):
             self._channel.basic_ack(basic_deliver.delivery_tag)
 
     def on_cancelok(self, unused_frame):
