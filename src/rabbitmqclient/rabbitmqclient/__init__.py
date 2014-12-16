@@ -1,4 +1,6 @@
 #!/opt/rocks/bin/python
+# -*- coding: utf-8 -*-
+
 # @Copyright@
 #
 #                               Rocks(r)
@@ -64,65 +66,85 @@ import time
 import sys
 import uuid
 
+
 class ActionError(Exception):
+
     pass
+
 
 class ZvolBusyActionError(ActionError):
+
     pass
 
-""" Runs system command. If passed second command, the output of first one will be piped to second one """
-def runCommand(params, params2 = None, shell=False):
+
+def runCommand(params, params2=None, shell=False):
     try:
-        cmd = subprocess.Popen(params, stdout=subprocess.PIPE, stderr = subprocess.PIPE, shell=shell)
+        cmd = subprocess.Popen(params, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE, shell=shell)
     except OSError, e:
         raise ActionError('Command %s failed: %s' % (params[0], str(e)))
 
     if params2:
         try:
-            cmd2 = subprocess.Popen(params2, stdin=cmd.stdout, stdout=subprocess.PIPE, stderr = subprocess.PIPE, shell=shell)
+            cmd2 = subprocess.Popen(params2, stdin=cmd.stdout,
+                                    stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, shell=shell)
         except OSError, e:
-            raise ActionError('Command %s failed: %s' % (params2[0], str(e)))
+            raise ActionError('Command %s failed: %s' % (params2[0],
+                              str(e)))
         cmd.stdout.close()
-        out, err = cmd2.communicate()
+        (out, err) = cmd2.communicate()
         if cmd2.returncode:
-            raise ActionError('Error executing %s: %s'%(params2[0], err))
+            raise ActionError('Error executing %s: %s' % (params2[0],
+                              err))
+        else:
+            return out.splitlines()
+    else:
+
+        (out, err) = cmd.communicate()
+        if cmd.returncode:
+            raise ActionError('Error executing %s: %s' % (params[0],
+                              err))
         else:
             return out.splitlines()
 
-    else:
-        out, err = cmd.communicate()
-        if cmd.returncode:
-            raise ActionError('Error executing %s: %s'%(params[0], err))
-        else:
-            return out.splitlines()
 
 def setupLogger(logger):
-    formatter = logging.Formatter("'%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'")
-    handler = logging.FileHandler("/var/log/rocks/rabbitmq-client.log"%fname)
+    formatter = \
+        logging.Formatter("'%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'"
+                          )
+    handler = logging.FileHandler('/var/log/rocks/rabbitmq-client.log'
+                                  % fname)
     handler.setFormatter(formatter)
 
-    #for log_name in (logger, 'pika.channel', 'pika.connection', 'rabbit_client.RabbitMQClient'):
-    for log_name in ([logger, 'rabbitmqclient.rabbitmqclient.RabbitMQCommonClient', 'tornado.application']):
+    # for log_name in (logger, 'pika.channel', 'pika.connection', 'rabbit_client.RabbitMQClient'):
+
+    for log_name in [logger,
+                     'rabbitmqclient.rabbitmqclient.RabbitMQCommonClient'
+                     , 'tornado.application']:
         logging.getLogger(log_name).setLevel(logging.DEBUG)
         logging.getLogger(log_name).addHandler(handler)
 
     return handler
 
 
-def get_attribute(attr_name, hostname, logger = None):
+def get_attribute(attr_name, hostname, logger=None):
     """connect to the database and return the value of the for the given
     attr_name relative to the hostname"""
+
     try:
         db = rocks.db.helper.DatabaseHelper()
         db.connect()
         hostname = str(db.getHostname(hostname))
-        #logger.debug('hostname %s attr_name %s' % (hostname, attr_name))
+
+        # logger.debug('hostname %s attr_name %s' % (hostname, attr_name))
+
         value = db.getHostAttr(hostname, attr_name)
         return value
     except Exception, e:
-        error = "Unable to get attribute %s for host %s (%s)" % \
-                (attr_name, hostname, str(e))
-	if logger:
+        error = 'Unable to get attribute %s for host %s (%s)' \
+            % (attr_name, hostname, str(e))
+        if logger:
             logger.exception(error)
         raise ActionError(error)
     finally:
@@ -131,45 +153,70 @@ def get_attribute(attr_name, hostname, logger = None):
 
 
 def isFileUsed(file):
-	"""return true if file is in use otherwise false"""
-	ret = os.system('fuser %s' % file)
-	returnValue = ret >> 5
-	if returnValue:
-		return False
-	else:
-		# fuser fails if the file is unused
-		return True
+    """return true if file is in use otherwise false"""
 
-class RabbitMQLocator():
+    ret = os.system('fuser %s' % file)
+    returnValue = ret >> 5
+    if returnValue:
+        return False
+    else:
+
+        # fuser fails if the file is unused
+
+        return True
+
+
+class RabbitMQLocator:
+
     LOGGER = logging.getLogger(__name__)
     db = rocks.db.helper.DatabaseHelper()
     db.connect()
     NODE_NAME = db.getHostname()
     IB_NET = db.getHostAttr(db.getHostname(), 'IB_net')
-    VM_CONTAINER_ZPOOL = db.getHostAttr(db.getHostname(), 'vm_container_zpool')
-    IMG_SYNC_WORKERS = db.getHostAttr(db.getHostname(), 'img_sync_workers')
+    VM_CONTAINER_ZPOOL = db.getHostAttr(db.getHostname(),
+            'vm_container_zpool')
+    IMG_SYNC_WORKERS = db.getHostAttr(db.getHostname(),
+            'img_sync_workers')
     db.close()
- 
+
     def __init__(self, config_name):
-        with open ("/opt/rocks/etc/rabbitmq_%s.conf"%config_name, "r") as rabbit_pw_file:
+        with open('/opt/rocks/etc/rabbitmq_%s.conf' % config_name, 'r'
+                  ) as rabbit_pw_file:
             self.RABBITMQ_PW = rabbit_pw_file.read().rstrip('\n')
-        with open("/opt/rocks/etc/rabbitmq.conf", "r") as rabbit_url_file:
+        with open('/opt/rocks/etc/rabbitmq.conf', 'r') as \
+            rabbit_url_file:
             self.RABBITMQ_URL = rabbit_url_file.read().rstrip('\n')
+
 
 class RabbitMQCommonClient:
 
     LOGGER = logging.getLogger(__name__)
     REQUEUE_TIMEOUT = 10
 
-    def __init__(self, exchange, exchange_type, username, vhost, process_message=None, on_open=None, routing_key = None, queue_name = "", ssl = True, qos_prefetch = None, no_ack = True):
+    def __init__(
+        self,
+        exchange,
+        exchange_type,
+        username,
+        vhost,
+        process_message=None,
+        on_open=None,
+        routing_key=None,
+        queue_name='',
+        ssl=True,
+        qos_prefetch=None,
+        no_ack=True,
+        ):
         """Create a new instance of the consumer class, passing in the AMQP
         URL used to connect to RabbitMQ.
 
         :param str amqp_url: The AMQP url to connect with
 
         """
+
         self._connection = None
         self._channel = None
+        self._pub_channel = None
         self._closing = False
         self._consumer_tag = None
         locator = RabbitMQLocator(username)
@@ -179,10 +226,10 @@ class RabbitMQCommonClient:
         self._vhost = vhost
         self.no_ack = no_ack
         self.process_message = process_message
-        self.on_connection_open_client=on_open
+        self.on_connection_open_client = on_open
         self.exchange = exchange
         self.exchange_type = exchange_type
-        if(routing_key == None):
+        if routing_key == None:
             self.routing_key = locator.NODE_NAME
         else:
             self.routing_key = routing_key
@@ -190,7 +237,7 @@ class RabbitMQCommonClient:
         self.heartbeat = 60
         self.queue_name = queue_name
         self.ssl = ssl
-        self.port = 5671 if ssl else 5672
+        self.port = (5671 if ssl else 5672)
         self.qos_prefetch = qos_prefetch
 
     def connect(self):
@@ -201,32 +248,39 @@ class RabbitMQCommonClient:
         :rtype: pika.SelectConnection
 
         """
+
         while not self._closing:
             self.LOGGER.info('Connecting to %s', self._url)
 
             try:
-                credentials = pika.PlainCredentials(self._username, self._pw)
-                parameters = pika.ConnectionParameters(self._url,
-                                                       self.port,
-                                                       self._vhost,
-                                                       credentials, 
-                                                       ssl = self.ssl,
-                                                       heartbeat_interval = self.heartbeat)
+                credentials = pika.PlainCredentials(self._username,
+                        self._pw)
+                parameters = pika.ConnectionParameters(
+                    self._url,
+                    self.port,
+                    self._vhost,
+                    credentials,
+                    ssl=self.ssl,
+                    heartbeat_interval=self.heartbeat,
+                    )
 
-                sel_con = pika.adapters.tornado_connection.TornadoConnection(parameters,
-                                     self.on_connection_open,
-                                     stop_ioloop_on_close=False)
+                sel_con = \
+                    pika.adapters.tornado_connection.TornadoConnection(parameters,
+                        self.on_connection_open,
+                        stop_ioloop_on_close=False)
 
-                if(self.on_connection_open_client):
+                if self.on_connection_open_client:
                     sel_con.add_on_open_callback(self.on_connection_open_client)
                 return sel_con
             except:
-                self.LOGGER.exception("Error connecting rabbitmq server at %s"%self._url)
+                self.LOGGER.exception('Error connecting rabbitmq server at %s'
+                         % self._url)
                 time.sleep(5)
                 pass
 
     def close_connection(self):
         """This method closes the connection to RabbitMQ."""
+
         self.LOGGER.info('Closing connection')
         self._connection.close()
 
@@ -235,10 +289,16 @@ class RabbitMQCommonClient:
         when RabbitMQ closes the connection to the publisher unexpectedly.
 
         """
+
         self.LOGGER.info('Adding connection close callback')
         self._connection.add_on_close_callback(self.on_connection_closed)
 
-    def on_connection_closed(self, connection, reply_code, reply_text):
+    def on_connection_closed(
+        self,
+        connection,
+        reply_code,
+        reply_text,
+        ):
         """This method is invoked by pika when the connection to RabbitMQ is
         closed unexpectedly. Since it is unexpected, we will reconnect to
         RabbitMQ if it disconnects.
@@ -248,12 +308,13 @@ class RabbitMQCommonClient:
         :param str reply_text: The server provided reply_text if given
 
         """
+
         self._channel = None
         if self._closing:
             self._connection.ioloop.stop()
         else:
-            self.LOGGER.warning('Connection closed, reopening in 5 seconds: (%s) %s',
-                           reply_code, reply_text)
+            self.LOGGER.warning('Connection closed, reopening in 5 seconds: (%s) %s'
+                                , reply_code, reply_text)
             self._connection.add_timeout(5, self.reconnect)
 
     def on_connection_open(self, unused_connection):
@@ -264,6 +325,7 @@ class RabbitMQCommonClient:
         :type unused_connection: pika.SelectConnection
 
         """
+
         self.LOGGER.info('Connection opened')
         self.add_on_connection_close_callback()
         self.open_channel()
@@ -273,13 +335,19 @@ class RabbitMQCommonClient:
         closed. See the on_connection_closed method.
 
         """
+
         if not self._closing:
 
             # Create a new connection
+
             self._connection = self.connect()
 
-
-    def on_channel_closed(self, channel, reply_code, reply_text):
+    def on_channel_closed(
+        self,
+        channel,
+        reply_code,
+        reply_text,
+        ):
         """Invoked by pika when RabbitMQ unexpectedly closes the channel.
         Channels are usually closed if you attempt to do something that
         violates the protocol, such as re-declare an exchange or queue with
@@ -291,12 +359,15 @@ class RabbitMQCommonClient:
         :param str reply_text: The text reason the channel was closed
 
         """
-        self.LOGGER.warning('Channel %i was closed: (%s) %s',
-                       channel, reply_code, reply_text)
+
+        self.LOGGER.warning('Channel %i was closed: (%s) %s', channel,
+                            reply_code, reply_text)
         self._connection.close()
+
         # for some reasons (which I don't have time to look at) it does not
         # call the call back on_connection_close when we stop so we need to
         # do it manually
+
         if self._closing:
             self._connection.ioloop.stop()
 
@@ -309,13 +380,17 @@ class RabbitMQCommonClient:
         :param pika.channel.Channel channel: The channel object
 
         """
+
         self.LOGGER.info('Channel opened')
         self._channel = channel
         self._channel.add_on_close_callback(self.on_channel_closed)
         self._channel.add_on_return_callback(self.on_return_callback)
-        if(self.qos_prefetch):
-            self._channel.basic_qos(prefetch_count = self.qos_prefetch);
+        if self.qos_prefetch:
+            self._channel.basic_qos(prefetch_count=self.qos_prefetch)
         self.setup_exchange(self.exchange)
+
+    def on_pub_channel_open(self, channel):
+        self._pub_channel = channel
 
     def setup_exchange(self, exchange_name):
         """Setup the exchange on RabbitMQ by invoking the Exchange.Declare RPC
@@ -325,10 +400,10 @@ class RabbitMQCommonClient:
         :param str|unicode exchange_name: The name of the exchange to declare
 
         """
+
         self.LOGGER.info('Declaring exchange %s', exchange_name)
         self._channel.exchange_declare(self.on_exchange_declareok,
-                                       exchange_name,
-                                       self.exchange_type)
+                exchange_name, self.exchange_type)
 
     def on_exchange_declareok(self, unused_frame):
         """Invoked by pika when RabbitMQ has finished the Exchange.Declare RPC
@@ -337,9 +412,13 @@ class RabbitMQCommonClient:
         :param pika.Frame.Method unused_frame: Exchange.DeclareOk response frame
 
         """
+
         self.LOGGER.info('Exchange declared')
         self.LOGGER.info('Declaring queue')
-        self._channel.queue_declare(self.on_queue_declareok, queue = self.queue_name, auto_delete=(self.queue_name == ""), exclusive=(self.queue_name == ""))
+        self._channel.queue_declare(self.on_queue_declareok,
+                                    queue=self.queue_name,
+                                    auto_delete=self.queue_name == '',
+                                    exclusive=self.queue_name == '')
 
     def on_queue_declareok(self, method_frame):
         """Method invoked by pika when the Queue.Declare RPC call made in
@@ -354,8 +433,8 @@ class RabbitMQCommonClient:
 
         self.QUEUE = method_frame.method.queue
 
-        self.LOGGER.info('Binding %s to %s with %s',
-                    self.exchange, self.QUEUE, self.routing_key)
+        self.LOGGER.info('Binding %s to %s with %s', self.exchange,
+                         self.QUEUE, self.routing_key)
         self._channel.queue_bind(self.on_bindok, self.QUEUE,
                                  self.exchange, self.routing_key)
 
@@ -365,6 +444,7 @@ class RabbitMQCommonClient:
         on_consumer_cancelled will be invoked by pika.
 
         """
+
         self.LOGGER.info('Adding consumer cancellation callback')
         self._channel.add_on_cancel_callback(self.on_consumer_cancelled)
 
@@ -375,41 +455,55 @@ class RabbitMQCommonClient:
         :param pika.frame.Method method_frame: The Basic.Cancel frame
 
         """
-        self.LOGGER.info('Consumer was cancelled remotely, shutting down: %r',
-                    method_frame)
+
+        self.LOGGER.info('Consumer was cancelled remotely, shutting down: %r'
+                         , method_frame)
         if self._channel:
             self._channel.close()
 
     def on_return_callback(self, method_frame):
         """Method is called when message can't be delivered
         """
+
         self.LOGGER.error(method_frame[2])
         if method_frame[2].message_id in self.sent_msg.keys():
             self.sent_msg.pop(method_frame[2].message_id)()
 
-    def publish_message(self, message, routing_key=None, reply_to=None, exchange=None, correlation_id=None, on_fail=None, type=None):
+    def publish_message(
+        self,
+        message,
+        routing_key=None,
+        reply_to=None,
+        exchange=None,
+        correlation_id=None,
+        on_fail=None,
+        type=None,
+        ):
         """If the class is not stopping, publish a message to RabbitMQ,
         appending a list of deliveries with the message number that was sent.
         This list will be used to check for delivery confirmations in the
         on_delivery_confirmations method.
         """
-        if(exchange==None):
-            exchange=self.exchange
-        properties = pika.BasicProperties(app_id='rocks.RabbitMQClient',
-                                          reply_to=reply_to,
-                                          message_id=str(uuid.uuid4()),
-                                          correlation_id=correlation_id,
-                                          type=type
-                                          )
-        self._channel.basic_publish(exchange, routing_key,
-                                    message,
-                                    properties,
-                                    mandatory=True)
-        if(on_fail):
-            self.sent_msg[properties.message_id] = on_fail
-        self.LOGGER.info('Published message %s %s %s'%(message, exchange, routing_key))
 
-    def on_message(self, unused_channel, basic_deliver, properties, body):
+        if exchange == None:
+            exchange = self.exchange
+        properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
+                , reply_to=reply_to, message_id=str(uuid.uuid4()),
+                correlation_id=correlation_id, type=type)
+        self._pub_channel.basic_publish(exchange, routing_key, message,
+                properties, mandatory=True)
+        if on_fail:
+            self.sent_msg[properties.message_id] = on_fail
+        self.LOGGER.info('Published message %s %s %s' % (message,
+                         exchange, routing_key))
+
+    def on_message(
+        self,
+        unused_channel,
+        basic_deliver,
+        properties,
+        body,
+        ):
         """Invoked by pika when a message is delivered from RabbitMQ. The
         channel is passed for your convenience. The basic_deliver object that
         is passed in carries the exchange, routing key, delivery tag and
@@ -423,19 +517,24 @@ class RabbitMQCommonClient:
         :param str|unicode body: The message body
 
         """
+
         self.LOGGER.info('Received message # %s from %s: %s',
-                    basic_deliver.delivery_tag, properties.app_id, body)
-        if(properties.correlation_id and properties.correlation_id in self.sent_msg.keys()):
+                         basic_deliver.delivery_tag, properties.app_id,
+                         body)
+        if properties.correlation_id and properties.correlation_id \
+            in self.sent_msg.keys():
             del self.sent_msg[properties.correlation_id]
 
         ret = None
         if self.process_message:
             ret = self.process_message(properties, body, basic_deliver)
 
-        if(ret == False):
-            self._connection.add_timeout(self.REQUEUE_TIMEOUT, lambda: self._channel.basic_nack(basic_deliver.delivery_tag))
-            self.LOGGER.debug('Nacked message %s'%basic_deliver.delivery_tag)
-        elif(self.no_ack):
+        if ret == False:
+            self._connection.add_timeout(self.REQUEUE_TIMEOUT, lambda : \
+                    self._channel.basic_nack(basic_deliver.delivery_tag))
+            self.LOGGER.debug('Nacked message %s'
+                              % basic_deliver.delivery_tag)
+        elif self.no_ack:
             self._channel.basic_ack(basic_deliver.delivery_tag)
 
     def on_cancelok(self, unused_frame):
@@ -447,7 +546,9 @@ class RabbitMQCommonClient:
         :param pika.frame.Method unused_frame: The Basic.CancelOk frame
 
         """
-        self.LOGGER.info('RabbitMQ acknowledged the cancellation of the consumer')
+
+        self.LOGGER.info('RabbitMQ acknowledged the cancellation of the consumer'
+                         )
         self.close_channel()
 
     def stop_consuming(self):
@@ -455,9 +556,12 @@ class RabbitMQCommonClient:
         Basic.Cancel RPC command.
 
         """
+
         if self._channel:
-            self.LOGGER.info('Sending a Basic.Cancel RPC command to RabbitMQ')
-            self._channel.basic_cancel(callback=self.on_cancelok, consumer_tag=self._consumer_tag)
+            self.LOGGER.info('Sending a Basic.Cancel RPC command to RabbitMQ'
+                             )
+            self._channel.basic_cancel(callback=self.on_cancelok,
+                    consumer_tag=self._consumer_tag)
 
     def start_consuming(self):
         """This method sets up the consumer by first calling
@@ -469,10 +573,11 @@ class RabbitMQCommonClient:
         will invoke when a message is fully received.
 
         """
+
         self.LOGGER.info('Issuing consumer related RPC commands')
         self.add_on_cancel_callback()
-        self._consumer_tag = self._channel.basic_consume(self.on_message,
-                                                         self.QUEUE)
+        self._consumer_tag = \
+            self._channel.basic_consume(self.on_message, self.QUEUE)
 
     def on_bindok(self, unused_frame):
         """Invoked by pika when the Queue.Bind method has completed. At this
@@ -482,6 +587,7 @@ class RabbitMQCommonClient:
         :param pika.frame.Method unused_frame: The Queue.BindOk response frame
 
         """
+
         self.LOGGER.info('Queue bound')
         self.start_consuming()
 
@@ -490,6 +596,7 @@ class RabbitMQCommonClient:
         Channel.Close RPC command.
 
         """
+
         self.LOGGER.info('Closing the channel')
         self._channel.close()
 
@@ -499,15 +606,18 @@ class RabbitMQCommonClient:
         on_channel_open callback will be invoked by pika.
 
         """
+
         self.LOGGER.info('Creating a new channel')
         self._connection.channel(on_open_callback=self.on_channel_open)
+        self._connection.channel(on_open_callback=self.on_pub_channel_open)
 
     def run(self):
         """Run the example consumer by connecting to RabbitMQ and then
         starting the IOLoop to block and allow the SelectConnection to operate.
 
         """
-        self.LOGGER.info("starting ioloop")
+
+        self.LOGGER.info('starting ioloop')
         self._connection = self.connect()
         self._connection.ioloop.start()
 
@@ -522,10 +632,13 @@ class RabbitMQCommonClient:
         the IOLoop will be buffered but not processed.
 
         """
+
         self.LOGGER.info('Stopping')
         self._closing = True
         self.stop_consuming()
+
         # for some reason the tornado ioloop does not get stopped when hit
         # by a SIGTERM, so we don't need to re-start it here
-        #self._connection.ioloop.start()
+        # self._connection.ioloop.start()
+
         self.LOGGER.info('Stopped')
