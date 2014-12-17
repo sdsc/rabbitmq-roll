@@ -270,6 +270,7 @@ class RabbitMQCommonClient:
         reply_text,
         ):
         self._channel = None
+        self._pub_channel = None
         if self._closing:
             self._connection.ioloop.stop()
         else:
