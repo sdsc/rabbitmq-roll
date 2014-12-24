@@ -17,7 +17,7 @@
 	$Log$
 	</changelog>
 
-    <post>
+<post>
 	RabbitMQServiceNode=$(/opt/rocks/bin/rocks list host attr | /bin/awk -F: '/RABBITMQ_Server /{print $1}')
         echo $RabbitMQServiceNode &gt; /opt/rocks/etc/rabbitmq.conf
         chmod 400 /opt/rocks/etc/rabbitmq.conf
@@ -25,7 +25,7 @@
         # adding rabbitmq to 411 so we push the password to the nodes
         echo "FILES_NOCOMMENT += /opt/rocks/etc/rabbitmq.conf" &gt;&gt; /var/411/Files.mk
         /usr/bin/make -C /var/411 411.mk
-    </post>
+</post>
 
 
 </kickstart>
