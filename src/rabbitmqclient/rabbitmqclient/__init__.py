@@ -188,7 +188,7 @@ class RabbitMQLocator:
             self.RABBITMQ_URL = rabbit_url_file.read().rstrip('\n')
 
 
-class RabbitMQCommonClient:
+class RabbitMQCommonClient(object):
 
     LOGGER = logging.getLogger(__name__)
     REQUEUE_TIMEOUT = 10
