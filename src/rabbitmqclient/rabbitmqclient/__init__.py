@@ -59,22 +59,11 @@
 import subprocess
 import logging
 import os
-import rocks.db.helper
 import pika
 import json
 import time
 import sys
 import uuid
-
-
-class ActionError(Exception):
-
-    pass
-
-
-class ZvolBusyActionError(ActionError):
-
-    pass
 
 
 def runCommand(params, params2=None, shell=False):
@@ -128,56 +117,9 @@ def setupLogger(logger):
     return handler
 
 
-def get_attribute(attr_name, hostname, logger=None):
-    """connect to the database and return the value of the for the given
-    attr_name relative to the hostname"""
-
-    try:
-        db = rocks.db.helper.DatabaseHelper()
-        db.connect()
-        hostname = str(db.getHostname(hostname))
-
-        # logger.debug('hostname %s attr_name %s' % (hostname, attr_name))
-
-        value = db.getHostAttr(hostname, attr_name)
-        return value
-    except Exception, e:
-        error = 'Unable to get attribute %s for host %s (%s)' \
-            % (attr_name, hostname, str(e))
-        if logger:
-            logger.exception(error)
-        raise ActionError(error)
-    finally:
-        db.close()
-        db.closeSession()
-
-
-def isFileUsed(file):
-    """return true if file is in use otherwise false"""
-
-    ret = os.system('fuser %s' % file)
-    returnValue = ret >> 5
-    if returnValue:
-        return False
-    else:
-
-        # fuser fails if the file is unused
-
-        return True
-
-
 class RabbitMQLocator:
 
     LOGGER = logging.getLogger(__name__)
-    db = rocks.db.helper.DatabaseHelper()
-    db.connect()
-    NODE_NAME = db.getHostname()
-    IB_NET = db.getHostAttr(db.getHostname(), 'IB_net')
-    VM_CONTAINER_ZPOOL = db.getHostAttr(db.getHostname(),
-            'vm_container_zpool')
-    IMG_SYNC_WORKERS = db.getHostAttr(db.getHostname(),
-            'img_sync_workers')
-    db.close()
 
     def __init__(self, config_name):
         with open('/opt/rocks/etc/rabbitmq_%s.conf' % config_name, 'r'
@@ -191,7 +133,6 @@ class RabbitMQLocator:
 class RabbitMQCommonClient(object):
 
     LOGGER = logging.getLogger(__name__)
-    REQUEUE_TIMEOUT = 10
 
     def __init__(
         self,
@@ -232,6 +173,7 @@ class RabbitMQCommonClient(object):
         self.ssl = ssl
         self.port = (5671 if ssl else 5672)
         self.qos_prefetch = qos_prefetch
+        self.REQUEUE_TIMEOUT = 10
 
     def connect(self):
         while not self._closing:
