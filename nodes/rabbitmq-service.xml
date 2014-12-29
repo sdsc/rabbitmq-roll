@@ -24,22 +24,22 @@
 
 
 <post>
-        mkdir -p /etc/pki/rabbitmq
+        mkdir -p /etc/ssl/rabbitmq
 
 <file name="/etc/rabbitmq/rabbitmq.config" perms="644">
 [
   {rabbit, [
      {ssl_listeners, [5671]},
-     {ssl_options, [{cacertfile,"/etc/pki/rabbitmq/cacert.pem"},
-                    {certfile,"/etc/pki/rabbitmq/cert.pem"},
-                    {keyfile,"/etc/pki/rabbitmq/key.pem"},
+     {ssl_options, [{cacertfile,"/etc/ssl/rabbitmq/cacert.pem"},
+                    {certfile,"/etc/ssl/rabbitmq/cert.pem"},
+                    {keyfile,"/etc/ssl/rabbitmq/key.pem"},
                     {verify,verify_peer},
                     {fail_if_no_peer_cert,false}]}
    ]}
 ]. 
 </file>
 
-<file name="/etc/pki/rabbitmq/openssl.cnf" perms="600">
+<file name="/etc/ssl/rabbitmq/openssl.cnf" perms="600">
 [ ca ]
 default_ca = testca
 
@@ -95,14 +95,14 @@ keyUsage = keyEncipherment
 extendedKeyUsage = 1.3.6.1.5.5.7.3.1
 </file>
 
-        cd /etc/pki/rabbitmq
-        /usr/bin/openssl req -x509 -config /etc/pki/rabbitmq/openssl.cnf -newkey rsa:2048 -days 3650 \
+        cd /etc/ssl/rabbitmq
+        /usr/bin/openssl req -x509 -config /etc/ssl/rabbitmq/openssl.cnf -newkey rsa:2048 -days 3650 \
             -out cacert.pem -keyout cakey.pem -outform PEM -subj /CN=MyCA/ -nodes
         /usr/bin/openssl req -newkey rsa:2048 -keyout key.pem -nodes -x509 -days 3650 -out cert.pem \
             -subj "/C=US/ST=CA/L=San Diego/O=UCSD/OU=SDSC/CN=&Kickstart_PublicHostname;"
-        /bin/chmod 770 /etc/pki/rabbitmq
-        /bin/chmod 660 /etc/pki/rabbitmq/*
-        /bin/chown rabbitmq:rabbitmq /etc/pki/rabbitmq -R
+        /bin/chmod 770 /etc/ssl/rabbitmq
+        /bin/chmod 660 /etc/ssl/rabbitmq/*
+        /bin/chown rabbitmq:rabbitmq /etc/ssl/rabbitmq -R
 
         /sbin/chkconfig rabbitmq-server on
         /usr/lib/rabbitmq/bin/rabbitmq-plugins enable rabbitmq_management --offline
