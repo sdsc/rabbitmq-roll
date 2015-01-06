@@ -142,7 +142,7 @@ class RabbitMQCommonClient(object):
         vhost,
         process_message=None,
         on_open=None,
-        routing_key=None,
+        routing_key='',
         queue_name='',
         ssl=True,
         qos_prefetch=None,
@@ -163,10 +163,7 @@ class RabbitMQCommonClient(object):
         self.on_connection_open_client = on_open
         self.exchange = exchange
         self.exchange_type = exchange_type
-        if routing_key == None:
-            self.routing_key = locator.NODE_NAME
-        else:
-            self.routing_key = routing_key
+        self.routing_key = routing_key
         self.sent_msg = {}
         self.heartbeat = 60
         self.queue_name = queue_name
