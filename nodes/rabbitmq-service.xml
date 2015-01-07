@@ -35,8 +35,16 @@ RABBITMQ_GID=<eval>/usr/bin/getent group rabbitmq 2&gt;&amp;1 > /dev/null &amp;&
   -d "/var/lib/rabbitmq" -g rabbitmq -s /bin/bash \
       -u $RABBITMQ_UID rabbitmq
 
-/bin/chmod rabbitmq:rabbitmq /var/log/rabbitmq -R
-/bin/chmod rabbitmq:rabbitmq /var/lib/rabbitmq -R
+/usr/bin/getent group rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
+    /usr/sbin/groupadd -g $RABBITMQ_GID rabbitmq
+/usr/bin/getent passwd rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
+    /usr/sbin/useradd -c "RabbitMQ service" \
+        -d "/etc/slurm" -g rabbitmq -s /bin/false -u -g $RABBITMQ_UID rabbitmq
+
+
+
+/bin/chown rabbitmq:rabbitmq /var/log/rabbitmq -R
+/bin/chown rabbitmq:rabbitmq /var/lib/rabbitmq -R
 
 mkdir -p /etc/ssl/rabbitmq
 
