@@ -25,6 +25,13 @@
     # adding rabbitmq to 411 so we push the password to the nodes
     echo "FILES_NOCOMMENT += /opt/rocks/etc/rabbitmq.conf" &gt;&gt; /var/411/Files.mk
     /usr/bin/make -C /var/411 411.mk
+
+    /usr/bin/getent group rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
+        /usr/sbin/groupadd -r rabbitmq
+    /usr/bin/getent passwd rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
+        /usr/sbin/useradd -c "RabbitMQ service" \
+              -d "/etc/slurm" -g rabbitmq -s /bin/false -r rabbitmq
+
 </post>
 
 
