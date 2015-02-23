@@ -39,7 +39,7 @@ RABBITMQ_GID=<eval>/usr/bin/getent group rabbitmq 2&gt;&amp;1 > /dev/null &amp;&
     /usr/sbin/groupadd -g $RABBITMQ_GID rabbitmq
 /usr/bin/getent passwd rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
     /usr/sbin/useradd -c "RabbitMQ service" \
-        -d "/etc/slurm" -g rabbitmq -s /bin/false -u -g $RABBITMQ_UID rabbitmq
+        -d "/var/lib/rabbitmq" -g rabbitmq -s /bin/false -u -g $RABBITMQ_UID rabbitmq
 
 
 
