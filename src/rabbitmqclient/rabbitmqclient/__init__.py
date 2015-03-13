@@ -65,6 +65,10 @@ import time
 import sys
 import uuid
 
+class ActionError(Exception):
+
+    pass
+
 
 def runCommand(params, params2=None, shell=False):
     try:
