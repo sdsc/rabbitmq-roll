@@ -151,6 +151,7 @@ class RabbitMQCommonClient(object):
         ssl=True,
         qos_prefetch=None,
         no_ack=True,
+        mandatory=True
         ):
         self._connection = None
         self._channel = None
@@ -174,6 +175,7 @@ class RabbitMQCommonClient(object):
         self.ssl = ssl
         self.port = (5671 if ssl else 5672)
         self.qos_prefetch = qos_prefetch
+        self.mandatory_deliver = mandatory
         self.REQUEUE_TIMEOUT = 10
 
     def connect(self):
@@ -324,7 +326,7 @@ class RabbitMQCommonClient(object):
                 , reply_to=reply_to, message_id=str(uuid.uuid4()),
                 correlation_id=correlation_id, type=type)
         self._pub_channel.basic_publish(exchange, routing_key, message,
-                properties, mandatory=True)
+                properties, mandatory=self.mandatory_deliver)
         if on_fail:
             self.sent_msg[properties.message_id] = on_fail
         self.LOGGER.info('Published message %s %s %s' % (message,
