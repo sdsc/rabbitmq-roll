@@ -272,7 +272,7 @@ class RabbitMQCommonClient(object):
 
         self.LOGGER.info('Declaring exchange %s', self.exchange)
         self._channel.exchange_declare(self.on_exchange_declareok,
-                self.exchange, self.exchange_type)
+                self.exchange, self.exchange_type, durable=self.durable)
 
     def on_pub_channel_open(self, channel):
         self._pub_channel = channel
@@ -322,13 +322,14 @@ class RabbitMQCommonClient(object):
         correlation_id=None,
         on_fail=None,
         type=None,
+        delivery_mode=1
         ):
 
         if exchange == None:
             exchange = self.exchange
         properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
                 , reply_to=reply_to, message_id=str(uuid.uuid4()),
-                correlation_id=correlation_id, type=type)
+                correlation_id=correlation_id, type=type, delivery_mode=delivery_mode)
         self._pub_channel.basic_publish(exchange, routing_key, message,
                 properties, mandatory=self.mandatory_deliver)
         if on_fail:
