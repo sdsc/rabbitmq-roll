@@ -151,7 +151,8 @@ class RabbitMQCommonClient(object):
         ssl=True,
         qos_prefetch=None,
         no_ack=True,
-        mandatory=True
+        mandatory=True,
+        durable = False
         ):
         self._connection = None
         self._channel = None
@@ -176,6 +177,7 @@ class RabbitMQCommonClient(object):
         self.port = (5671 if ssl else 5672)
         self.qos_prefetch = qos_prefetch
         self.mandatory_deliver = mandatory
+        self.durable = durable
         self.REQUEUE_TIMEOUT = 10
 
     def connect(self):
@@ -281,7 +283,9 @@ class RabbitMQCommonClient(object):
         self._channel.queue_declare(self.on_queue_declareok,
                                     queue=self.queue_name,
                                     auto_delete=self.queue_name == '',
-                                    exclusive=self.queue_name == '')
+                                    exclusive=self.queue_name == '',
+                                    durable=self.durable
+                                    )
 
     def on_queue_declareok(self, method_frame):
         self.QUEUE = method_frame.method.queue
