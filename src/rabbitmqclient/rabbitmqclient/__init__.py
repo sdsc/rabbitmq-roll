@@ -65,6 +65,10 @@ import time
 import sys
 import uuid
 
+from tornado.gen import Task, Return, coroutine
+import tornado.process
+
+
 class ActionError(Exception):
 
     pass
@@ -101,6 +105,40 @@ def runCommand(params, params2=None, shell=False):
         else:
             return out.splitlines()
 
+STREAM = tornado.process.Subprocess.STREAM
+
+@coroutine
+def runCommandBackground(cmdlist, shell=False):
+    """
+    Wrapper around subprocess call using Tornado's Subprocess class.
+    This routine can fork a process in the background without blocking the
+    main IOloop, the the forked process can run for a long time without
+    problem
+    """
+
+    LOG = logging.getLogger('imgstorage.imgstoragenas.NasDaemon')
+    LOG.debug('Executing: ' + str(cmdlist))
+
+    # tornado.process.initialize()
+
+    sub_process = tornado.process.Subprocess(cmdlist, stdout=STREAM,
+            stderr=STREAM, shell=shell)
+
+    # we need to set_exit_callback to fetch the return value
+    # the function can even be empty by it must be set or the
+    # sub_process.returncode will be always None
+
+    retval = 0
+    sub_process.set_exit_callback(lambda value: value)
+
+    (result, error) = \
+        (yield [Task(sub_process.stdout.read_until_close),
+                Task(sub_process.stderr.read_until_close)])
+
+    if sub_process.returncode:
+        raise ActionError(error)
+
+    raise Return((result.splitlines(), error))
 
 def setupLogger(logger):
     formatter = \
