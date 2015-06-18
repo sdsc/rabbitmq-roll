@@ -65,6 +65,11 @@ import time
 import sys
 import uuid
 
+from struct import unpack
+
+from Crypto.Hash import SHA256
+from base64 import b64encode
+
 from tornado.gen import Task, Return, coroutine
 import tornado.process
 
@@ -217,6 +222,8 @@ class RabbitMQCommonClient(object):
         self.mandatory_deliver = mandatory
         self.durable = durable
         self.REQUEUE_TIMEOUT = 10
+        
+        self.replayNonce = unpack('Q', os.urandom(8))[0]
 
     def connect(self):
         while not self._closing:
@@ -360,20 +367,43 @@ class RabbitMQCommonClient(object):
         correlation_id=None,
         on_fail=None,
         type=None,
-        delivery_mode=1
+        delivery_mode=1,
+        expiration=None,
+        signer = None
         ):
 
         if exchange == None:
             exchange = self.exchange
         properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
-                , reply_to=reply_to, message_id=str(uuid.uuid4()),
-                correlation_id=correlation_id, type=type, delivery_mode=delivery_mode)
+                , reply_to=reply_to, message_id=str(self.replayNonce),
+                correlation_id=correlation_id, type=type, delivery_mode=delivery_mode,
+                timestamp = time.time(), expiration=expiration)
+
+        if(signer):
+            digest = SHA256.new()
+            digest.update(properties.message_id)
+            digest.update('|')
+            digest.update(properties.type)
+            digest.update('|')
+            digest.update(str(properties.timestamp))
+            digest.update('|')
+            digest.update(properties.expiration)
+            digest.update('|')
+            digest.update(message)
+            digest.update('|')
+            digest.update(properties.reply_to)
+
+            sig = signer.sign(digest)
+
+            properties.headers = dict(signature = b64encode(sig))
+
         self._pub_channel.basic_publish(exchange, routing_key, message,
                 properties, mandatory=self.mandatory_deliver)
         if on_fail:
             self.sent_msg[properties.message_id] = on_fail
         self.LOGGER.info('Published message %s %s %s' % (message,
                          exchange, routing_key))
+        self.replayNonce += 1
 
     def on_message(
         self,

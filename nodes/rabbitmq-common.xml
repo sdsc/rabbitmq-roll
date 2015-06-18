@@ -21,4 +21,6 @@
 	<package>pika</package>
 	<package>tornado</package>
 	<package>backports.ssl_match_hostname</package>
+	<package>paramiko</package>
+	<package>pycrypto</package>
 </kickstart>
