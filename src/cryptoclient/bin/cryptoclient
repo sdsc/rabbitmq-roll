@@ -1,0 +1,181 @@
+#!/opt/rocks/bin/python
+#
+# @Copyright@
+#
+#                               Rocks(r)
+#                        www.rocksclusters.org
+#                        version 5.6 (Emerald Boa)
+#                        version 6.1 (Emerald Boa)
+#
+# Copyright (c) 2000 - 2013 The Regents of the University of California.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+# 1. Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+# notice unmodified and in its entirety, this list of conditions and the
+# following disclaimer in the documentation and/or other materials provided
+# with the distribution.
+#
+# 3. All advertising and press materials, printed or electronic, mentioning
+# features or use of this software must display the following acknowledgement:
+#
+#       "This product includes software developed by the Rocks(r)
+#       Cluster Group at the San Diego Supercomputer Center at the
+#       University of California, San Diego and its contributors."
+#
+# 4. Except as permitted for the purposes of acknowledgment in paragraph 3,
+# neither the name or logo of this software nor the names of its
+# authors may be used to endorse or promote products derived from this
+# software without specific prior written permission.  The name of the
+# software includes the following terms, and any derivatives thereof:
+# "Rocks", "Rocks Clusters", and "Avalanche Installer".  For licensing of
+# the associated name, interested parties should contact Technology
+# Transfer & Intellectual Property Services, University of California,
+# San Diego, 9500 Gilman Drive, Mail Code 0910, La Jolla, CA 92093-0910,
+# Ph: (858) 534-5815, FAX: (858) 534-7345, E-MAIL:invent@ucsd.edu
+#
+# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS''
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+# BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+# WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+# OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+# IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# @Copyright@
+#
+
+from daemon import runner
+import signal
+import logging
+from rabbitmqclient import RabbitMQCommonClient, ActionError, runCommandBackground
+import json
+import sys,os
+import rocks.db.helper
+
+from tornado.gen import Task, Return, coroutine
+import tornado.process
+
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Hash import SHA256
+from Crypto.PublicKey import RSA
+from Crypto.Signature import PKCS1_PSS
+from cryptocommon import *
+
+class NodeConfig:
+    db = rocks.db.helper.DatabaseHelper()
+    db.connect()
+    NODE_NAME = db.getHostname()
+    db.close()
+
+def setupLogger(logger):
+    formatter = \
+        logging.Formatter("'%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'"
+                          )
+    handler = logging.FileHandler('/var/log/cryptoclient.log')
+    handler.setFormatter(formatter)
+
+    # for log_name in (logger, 'pika.channel', 'pika.connection', 'rabbit_client.RabbitMQClient'):
+
+    for log_name in [logger, 'rabbitmqclient',
+                     'tornado.application']:
+        logging.getLogger(log_name).setLevel(logging.DEBUG)
+        logging.getLogger(log_name).addHandler(handler)
+
+    return handler
+
+
+
+def runDaemon(app, handler):
+    daemon_runner = runner.DaemonRunner(app)
+
+    # This ensures that the logger file handle does not get closed during daemonization
+
+    daemon_runner.daemon_context.files_preserve = [handler.stream]
+    daemon_runner.daemon_context.signal_map = \
+        {signal.SIGTERM: lambda signum, frame: app.stop()}
+
+    daemon_runner.do_action()
+
+class CryptoClient(object):
+
+    def __init__(self):
+        self.stdin_path = '/dev/null'
+        self.stdout_path = '/tmp/out-cc.log'
+        self.stderr_path = '/tmp/err-cc.log'
+        self.pidfile_path = '/var/run/cryptoclient.pid'
+        self.pidfile_timeout = 5
+
+        self.function_dict = {
+            'key_response': self.key_response,
+            }
+
+        self.logger = \
+            logging.getLogger('cryptoclient.CryptoClient')
+
+    def run(self):
+        self.queue_connector = RabbitMQCommonClient("sec",
+                'direct', "acct-man", "acct-man",
+                self.process_message,
+                self.req_key_timeout,
+                routing_key=NodeConfig.NODE_NAME,
+                qos_prefetch=1,
+                mandatory=False,
+                durable=True)
+        self.queue_connector.run()
+
+    def req_key_timeout(self, con):
+        self.logger.debug("ADding 5000 timeout for req cert")
+        con.add_timeout(5, self.req_key)
+
+    def req_key(self):
+       self.logger.debug("Publishing req cert")
+       self.queue_connector.publish_message(json.dumps({"msg":"Gimme da key"}),
+            exchange='sec', routing_key='key_request',
+            reply_to=NodeConfig.NODE_NAME,
+            type="key_request",
+            delivery_mode = 2) 
+       self.logger.debug("Published req cert")
+
+    def stop(self):
+        self.queue_connector.stop()
+        self.logger.info('RabbitMQ connector stopping called')
+
+    def process_message(self, properties, message_str, deliver):
+        try:
+            #message = json.loads(message_str)
+            if properties.type not in self.function_dict.keys():
+                self.logger.error("Not found handler for type %s"%properties.type)
+                return
+
+            return self.function_dict[properties.type](message_str, properties)
+        except:
+            self.logger.exception('Unexpected error: %s %s'
+                                  % (sys.exc_info()[0],
+                                  sys.exc_info()[1]))
+
+       
+    def key_response(self, message, properties):
+        global clusterKey
+
+        self.logger.debug("Got key response %s"%(message))
+
+        key = verifyMessage(['hpcdev-pub03'], message, properties)
+        # key is encrypted with our public key... need to decrypt it
+        clusterKey = RsaDecrypt(key)
+        self.logger.debug("!!!!!!!!!!!!!!!!!!!!! MESSAGE !!!!!!!!!!!!!!!!!!! %s"%b64encode(clusterKey))
+
+
+handler = setupLogger('cryptoclient.CryptoClient')
+runDaemon(CryptoClient(), handler)

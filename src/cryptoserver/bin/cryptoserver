@@ -1,0 +1,260 @@
+#!/opt/rocks/bin/python
+#
+# @Copyright@
+#
+#                               Rocks(r)
+#                        www.rocksclusters.org
+#                        version 5.6 (Emerald Boa)
+#                        version 6.1 (Emerald Boa)
+#
+# Copyright (c) 2000 - 2013 The Regents of the University of California.
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+# 1. Redistributions of source code must retain the above copyright
+# notice, this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+# notice unmodified and in its entirety, this list of conditions and the
+# following disclaimer in the documentation and/or other materials provided
+# with the distribution.
+#
+# 3. All advertising and press materials, printed or electronic, mentioning
+# features or use of this software must display the following acknowledgement:
+#
+#       "This product includes software developed by the Rocks(r)
+#       Cluster Group at the San Diego Supercomputer Center at the
+#       University of California, San Diego and its contributors."
+#
+# 4. Except as permitted for the purposes of acknowledgment in paragraph 3,
+# neither the name or logo of this software nor the names of its
+# authors may be used to endorse or promote products derived from this
+# software without specific prior written permission.  The name of the
+# software includes the following terms, and any derivatives thereof:
+# "Rocks", "Rocks Clusters", and "Avalanche Installer".  For licensing of
+# the associated name, interested parties should contact Technology
+# Transfer & Intellectual Property Services, University of California,
+# San Diego, 9500 Gilman Drive, Mail Code 0910, La Jolla, CA 92093-0910,
+# Ph: (858) 534-5815, FAX: (858) 534-7345, E-MAIL:invent@ucsd.edu
+#
+# THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS''
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+# BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+# WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+# OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+# IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# @Copyright@
+#
+
+from daemon import runner
+import signal
+import logging
+from rabbitmqclient import RabbitMQCommonClient, ActionError, runCommandBackground
+import json
+import sys,os,re
+import rocks.db.helper
+
+from tornado.gen import Task, Return, coroutine
+import tornado.process
+
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Hash import SHA256
+from Crypto.PublicKey import RSA
+from Crypto.Signature import PKCS1_PSS
+
+CLUSTER_KEY_FILE='/var/tmp/clusterkey'
+PRIVATE_KEY_FILE='/etc/ssh/ssh_host_rsa_key'
+KNOWN_HOSTS_FILE='/var/tmp/cluster_known_hosts'
+REPLAY_CACHE_FILE='/tmp/replaycache'
+MSG_TTL = '300000'
+
+class NodeConfig:
+    db = rocks.db.helper.DatabaseHelper()
+    db.connect()
+    NODE_NAME = db.getHostname()
+    db.close()
+
+def setupLogger(logger):
+    formatter = \
+        logging.Formatter("'%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'"
+                          )
+    handler = logging.FileHandler('/var/log/cryptoserver.log')
+    handler.setFormatter(formatter)
+
+    # for log_name in (logger, 'pika.channel', 'pika.connection', 'rabbit_client.RabbitMQClient'):
+
+    for log_name in [logger, 'rabbitmqclient',
+                     'tornado.application']:
+        logging.getLogger(log_name).setLevel(logging.DEBUG)
+        logging.getLogger(log_name).addHandler(handler)
+
+    return handler
+
+
+
+def runDaemon(app, handler):
+    daemon_runner = runner.DaemonRunner(app)
+
+    # This ensures that the logger file handle does not get closed during daemonization
+
+    daemon_runner.daemon_context.files_preserve = [handler.stream]
+    daemon_runner.daemon_context.signal_map = \
+        {signal.SIGTERM: lambda signum, frame: app.stop()}
+
+    daemon_runner.do_action()
+
+class CryptoServer(object):
+
+
+
+    def __init__(self):
+        self.stdin_path = '/dev/null'
+        self.stdout_path = '/tmp/out-cs.log'
+        self.stderr_path = '/tmp/err-cs.log'
+        self.pidfile_path = '/var/run/cryptoserver.pid'
+        self.pidfile_timeout = 5
+
+        self.function_dict = {
+            'key_request': self.key_request,
+            }
+
+        self.logger = \
+            logging.getLogger('cryptoserver.CryptoServer')
+
+
+    def run(self):
+
+        with open(PRIVATE_KEY_FILE, 'r') as f:                                                                                                                
+            privKey = RSA.importKey(f.read())
+            self.signer = PKCS1_PSS.new(privKey)
+
+        self.queue_connector = RabbitMQCommonClient("sec",
+                'direct', "acct-man", "acct-man",
+                self.process_message,
+                routing_key = "key_request",
+                qos_prefetch=1,
+                mandatory=False,
+                durable=True)
+        self.queue_connector.run()
+
+    def stop(self):
+        self.queue_connector.stop()
+        self.logger.info('RabbitMQ connector stopping called')
+
+    def process_message(self, properties, message_str, deliver):
+        try:
+            message = json.loads(message_str)
+            if properties.type not in self.function_dict.keys():
+                self.logger.error("Not found handler for type %s"%properties.type)
+                return
+
+            return self.function_dict[properties.type](message, properties)
+        except:
+            self.logger.exception('Unexpected error: %s %s'
+                                  % (sys.exc_info()[0],
+                                  sys.exc_info()[1]))
+
+       
+    def key_request(self, message, properties):
+        self.logger.debug("Got key request %s"%(message))
+
+        # split the reply_to to the queue name and host name
+        # return instead of blowing up on bad input
+
+        self.logger.debug( "Got a keyex request. from %s."%properties.reply_to)
+
+        # build the response here...
+
+        # get the cluster key
+        key = self.read_cluster_key()
+
+        # encrypt cluster key
+        msg = self.RsaEncrypt(dstHost=properties.reply_to, msg=key)
+
+        self.queue_connector.publish_message(msg,
+            routing_key=properties.reply_to,
+            reply_to = NodeConfig.NODE_NAME,
+            type="key_response",
+            signer = self.signer,
+            expiration = MSG_TTL,
+            delivery_mode = 2)
+
+    def read_cluster_key(self):
+        """Read the cluster key from CLUSTER_KEY_FILE. Generate one if needed"""
+
+        try:
+            f = open(CLUSTER_KEY_FILE, 'r')
+            key = f.read()
+            if key == "":
+                self.generate_cluster_key()
+        except IOError:
+            # sometimes the file doesn't exist.
+            self.generate_cluster_key()
+
+        with open(CLUSTER_KEY_FILE, 'r') as f:
+            key = f.read()
+
+        if key == "":
+            raise Exception('Unable to read key from {}; unable to write one too.'.format(CLUSTER_KEY_FILE))
+
+        return key
+
+
+    def generate_cluster_key(self):
+        """Generate a cluster key and write it to CLUSTER_KEY_FILE"""
+        
+        # does file exist?
+        if os.path.isfile(CLUSTER_KEY_FILE):
+            # it better be empty.
+            if os.path.getsize(CLUSTER_KEY_FILE) > 0:
+                raise Exception('Key file not empty'.format(CLUSTER_KEY_FILE))
+
+        with open(CLUSTER_KEY_FILE, 'w') as f:
+            # generate a key
+            tmpkey = os.urandom(32)
+            if len(tmpkey) != 32:
+                raise Exception('Only got {} bytes from os.urandom(), expected {}'.format(len(tmpkey), 32))
+
+            # write it
+            f.seek(0)
+            f.write(tmpkey)
+            tmpkey = ''
+
+    def RsaEncrypt(self, dstHost, msg):
+        """Encrypt msg with public key for dstHost (so dstHost can decrypt with its private key).  Note that msg must be relatively small, ~256 bytes, and they payload will not be authenticated."""
+
+        dstKey = self.readHostKey(dstHost)
+        if dstKey == None:
+            self.logger.error( 'Unable to locate public key for {} in file {}'.format(dstHost, KNOWN_HOSTS_FILE))
+            return
+
+        dstKey = RSA.importKey('ssh-rsa %s'%dstKey)
+        dstCipher = PKCS1_OAEP.new(dstKey)
+        return dstCipher.encrypt(msg)
+
+    def readHostKey(self, host):
+        """Read a host key from the known hosts file"""
+
+        # should do here, because otherwise daemonization breaks /dev/urandom file descriptor in paramiko
+        if(not hasattr(self, 'hostKeys')):
+            from paramiko import HostKeys
+            self.hostKeys = HostKeys(KNOWN_HOSTS_FILE)
+
+        try:
+            k = self.hostKeys.lookup(host)['ssh-rsa']
+            return(k.get_base64())
+        except TypeError:
+            return None
+
+handler = setupLogger('cryptoserver.CryptoServer')
+runDaemon(CryptoServer(), handler)
