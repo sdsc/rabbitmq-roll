@@ -9,11 +9,6 @@ PRIVATE_KEY_FILE='/etc/ssh/ssh_host_rsa_key'
 KNOWN_HOSTS_FILE='/etc/ssh/ssh_known_hosts'
 REPLAY_CACHE_FILE='/tmp/replaycache'
 
-# we'll need a HostKey object so we can look up ssh keys.
-# do this once at startup to reduce message sending overhead
-#from paramiko import HostKeys
-#hostKeys = HostKeys(KNOWN_HOSTS_FILE)
-
 # initialize the replay nonce to some random number
 # while it would suffice to use a new nonce for each message
 # it's a little slower than just incrementing this number.

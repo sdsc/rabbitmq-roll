@@ -19,22 +19,6 @@ KEY_SIZE=32
 IV_SIZE=16
 
 logger = logging.getLogger('rabbitmqclient')
-def setSignMessage(msg, properties):
-    """Set some mandatory fields in properties (pika.BasicProperties), add signature header to properties.  Signed using key in PRIVATE_KEY_FILE."""
-
-    # replayNonce to prevent replay attacks
-    config.replayNonce += 1
-    properties.message_id = str(config.replayNonce)
-
-    # time so we know when the message was created
-    properties.timestamp = time.time()
-
-    # expiration so we know when the message is to old to act on
-    # also needed for replay attack mitigation
-    properties.expiration = config.MSG_TTL
-
-    signMessage(msg=msg, properties=properties)
-
 
 def digestMessage(msg, properties):
     """Create a digest (sha256 mhash object) of msg and its properties (pika.BasicProperties). You probably want to call digest() of the result."""
@@ -57,31 +41,12 @@ def digestMessage(msg, properties):
     return digest
 
 
-def signMessage(msg, properties):
-    """Sign the outgoing amqp message using key in PRIVATE_KEY_FILE, adds signature header to properties"""
-
-    digest = digestMessage(msg=msg, properties=properties)
-
-    # encrypt digest with our private key
-    f = open(config.PRIVATE_KEY_FILE, 'r')
-    privKey = RSA.importKey(f.read())
-    f.close()
-    from Crypto.Signature import PKCS1_PSS
-    signer = PKCS1_PSS.new(privKey)
-    sig = signer.sign(digest)
-
-    properties.headers = dict(signature = b64encode(sig))
-
-def verifyMessage(expectedSrcs, msg, properties):
+def verifyMessage(msg, properties):
     """Verify the integrity of the message.  Provide a dictionary of expected sources to check the signature against.  Will perform replay checks.  Returns verified message or None"""
     # check origin and sigs first. No point in processing forged messages.
     if properties.reply_to == None:
         logger.error("No reply_to")
         return None
-
-    if properties.reply_to not in expectedSrcs:
-	    logger.error("Msg not from expected source")
-	    return None
 
     pubKeyRaw = readHostKey(properties.reply_to)
     if pubKeyRaw is None:
@@ -91,7 +56,6 @@ def verifyMessage(expectedSrcs, msg, properties):
     pubKey = RSA.importKey('ssh-rsa %s'%pubKeyRaw)
     expectedSig = b64decode(properties.headers.get('signature'))
     observedDigest = digestMessage(msg=msg, properties=properties)
-    logger.info('%s'%properties)
     v = PKCS1_PSS.new(pubKey)
     if not v.verify(observedDigest, expectedSig):
         logger.error("Failed to verify signature %s"%(b64encode(expectedSig)))

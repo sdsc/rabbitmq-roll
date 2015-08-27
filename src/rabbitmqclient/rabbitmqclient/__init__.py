@@ -418,7 +418,8 @@ class RabbitMQCommonClient(object):
 
         if(self.encryption):
             
-            self.LOGGER.info('%s'%properties)
+            message = clusterEncrypt(self.clusterKey, message)
+
             digest = SHA256.new()
             digest.update(properties.message_id)
             digest.update('|')
@@ -436,7 +437,6 @@ class RabbitMQCommonClient(object):
 
             properties.headers = dict(signature = b64encode(sig))
 
-            message = clusterEncrypt(self.clusterKey, message)
 
         self._pub_channel.basic_publish(exchange, routing_key, message,
                 properties, mandatory=self.mandatory_deliver)
@@ -463,10 +463,10 @@ class RabbitMQCommonClient(object):
         ret = None
         if self.process_message:
             if(self.encryption):
-                ciphertext = verifyMessage(["hpcdev-pub03"], body, properties)
+                ciphertext = verifyMessage(body, properties)
                 if(ciphertext is None):
                     self.LOGGER.error("Message verification failed")
-                    #return
+                    return
 
                 body = clusterDecrypt(self.clusterKey, body)
             ret = self.process_message(properties, body, basic_deliver)
@@ -490,6 +490,11 @@ class RabbitMQCommonClient(object):
                          basic_deliver.delivery_tag, properties.app_id,
                          body)
 
+        ciphertext = verifyMessage(body, properties)
+        if(ciphertext is None):
+            self.LOGGER.error("Message verification failed")
+            return
+
         if(self.secur_server and properties.type == 'key_request'):
             msg = RsaEncrypt(dstHost=properties.reply_to, msg=self.clusterKey)
 
@@ -507,7 +512,7 @@ class RabbitMQCommonClient(object):
 
             self.replayNonce += 1
         elif(not self.secur_server and properties.type == 'key_response'):
-            self.clusterKey = RsaDecrypt(body)
+            self.clusterKey = RsaDecrypt(ciphertext)
             self.LOGGER.debug("Got cluster key %s, initing regular queues"%self.clusterKey)
             self._channel.exchange_declare(self.on_exchange_declareok,
                     self.exchange, self.exchange_type, durable=self.durable)
