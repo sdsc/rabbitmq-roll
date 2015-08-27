@@ -89,7 +89,6 @@ install:: build
 	#  $(myenv) $(PY.PATH) setup.py install --root=$(ROOT) || \
 	#  $(myenv) $(PY.PATH) setup.py install --root=/
 	$(myenv) $(PY.PATH) setup.py install --root=$(ROOT)
-	install -m 755 init.d/$(NAME) $(ROOT)/etc/rc.d/init.d/$(NAME) -D
 
 clean::
 	rm -rf build

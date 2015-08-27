@@ -12,7 +12,7 @@ version = os.environ.get('ROCKS_VERSION')
 # main configuration of distutils
 # 
 setup(
-    name = 'cryptoserver',
+    name = 'cryptocommon',
     version = version,
     description = 'Accounts manager',
     author = 'Dmitry Mishin',
@@ -29,5 +29,5 @@ setup(
     # disable zip installation
     zip_safe = False,
     #the command line called by users    
-    scripts=['bin/cryptoserver'],
+    #scripts=['bin/cryptoserver'],
 )

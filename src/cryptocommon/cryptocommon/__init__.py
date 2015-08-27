@@ -15,7 +15,6 @@ import anydbm
 import os
 
 # globals
-clusterKey = None
 KEY_SIZE=32
 IV_SIZE=16
 
@@ -48,7 +47,7 @@ def digestMessage(msg, properties):
     digest.update('|')
     digest.update(properties.type)
     digest.update('|')
-    digest.update(str(int(properties.timestamp)))
+    digest.update(str(properties.timestamp))
     digest.update('|')
     digest.update(properties.expiration)
     digest.update('|')
@@ -75,50 +74,48 @@ def signMessage(msg, properties):
 
 def verifyMessage(expectedSrcs, msg, properties):
     """Verify the integrity of the message.  Provide a dictionary of expected sources to check the signature against.  Will perform replay checks.  Returns verified message or None"""
-
     # check origin and sigs first. No point in processing forged messages.
     if properties.reply_to == None:
+        logger.error("No reply_to")
         return None
 
     if properties.reply_to not in expectedSrcs:
-	    print "Msg not from expected source"
+	    logger.error("Msg not from expected source")
 	    return None
 
     pubKeyRaw = readHostKey(properties.reply_to)
-    logger.debug("pubKeyRaw %s"%pubKeyRaw)
     if pubKeyRaw is None:
-	    return None
+        logger.error("No pubKeyRaw")
+        return None
 
     pubKey = RSA.importKey('ssh-rsa %s'%pubKeyRaw)
     expectedSig = b64decode(properties.headers.get('signature'))
     observedDigest = digestMessage(msg=msg, properties=properties)
     v = PKCS1_PSS.new(pubKey)
     if not v.verify(observedDigest, expectedSig):
-        logging.getLogger('cryptoclient.CryptoClient').error("Failed to verify signature %s %s"%(expectedSig, observedDigest))
+        logger.error("Failed to verify signature %s"%(b64encode(expectedSig)))
         return None
 
     # message expired?
     now = time.time()
     expires = (int(properties.expiration) / 1000) + int(properties.timestamp)
     if expires <= now:
-	print "Message expired {}s ago".format(str(now-expires))
-	return None
-    #print "message expires at {}\n                   {}".format(expires,time.time())
+        logging.getLogger('cryptoclient.CryptoClient').error("Message expired $ss ago"%str(now-expires))
+        return None
 
     # anti-replay check
-    id = "%s|%s"%(properties.reply_to,  properties.message_id)
+    id = "%s|%s"%(properties.reply_to, properties.message_id)
     db = anydbm.open(config.REPLAY_CACHE_FILE, 'c')
     # note old entries (don't delete here since it screws up the iterator)
     oldEntries = []
     for h,exp in db.iteritems():
-	#print "examining {} expires {}".format(h,str(exp))
-	if int(exp) <= now:
-	    oldEntries.append(h)
+        if int(exp) <= now:
+            oldEntries.append(h)
     for h in oldEntries:
-	del db[h]
+        del db[h]
     if id in db.keys():
-	print "replay detected:{}".format(id)
-	return None
+        logger.error("replay detected: %s"%id)
+        return None
 
     # add this message to the replay cache
     db[id] = str(expires)
@@ -130,13 +127,10 @@ def verifyMessage(expectedSrcs, msg, properties):
 
 def RsaDecrypt(msg):
     """Decrypt msg with our private key.  Do not use for large messages.  Corresponds to RsaEncrypt()"""
-    f = open(config.PRIVATE_KEY_FILE, 'r')
-    privKey = RSA.importKey(f.read())
-    f.close()
-    srcCipher = PKCS1_OAEP.new(privKey)
-    logging.getLogger('cryptoclient.CryptoClient').debug( "Key!!! %s"%privKey)
-    logging.getLogger('cryptoclient.CryptoClient').debug( "msg!!! %s"%msg)
-    return(srcCipher.decrypt(msg))
+    with open(config.PRIVATE_KEY_FILE, 'r') as f:
+        privKey = RSA.importKey(f.read())
+        srcCipher = PKCS1_OAEP.new(privKey)
+        return(srcCipher.decrypt(msg))
 
     
 def RsaEncrypt(dstHost, msg):
@@ -164,10 +158,9 @@ def readHostKey(host):
         return None
 
 
-def clusterEncrypt(msg):
+def clusterEncrypt(clusterKey, msg):
     """Encrypt msg using AES and clusterKey"""
 
-    global clusterKey
     global IV_SIZE
     global KEY_SIZE
 
@@ -191,11 +184,48 @@ def clusterEncrypt(msg):
     return cipher.encrypt(msg)
 
 
-def clusterDecrypt(ciphertext):
+def clusterDecrypt(clusterKey, ciphertext):
     """Decrypt msg using AES and clusterKey"""
-    global IV_SIZE
-    
-    # clusterKey should have been set already.
     cipher = AES.new(clusterKey, AES.MODE_OPENPGP, ciphertext[:IV_SIZE+2])
     return cipher.decrypt(ciphertext[IV_SIZE+2:])
 
+def read_cluster_key():
+    """Read the cluster key from CLUSTER_KEY_FILE. Generate one if needed"""
+
+    try:
+        f = open(config.CLUSTER_KEY_FILE, 'r')
+        key = f.read()
+        if key == "":
+            generate_cluster_key()
+    except IOError:
+        # sometimes the file doesn't exist.
+        generate_cluster_key()
+
+    with open(config.CLUSTER_KEY_FILE, 'r') as f:
+        key = f.read()
+
+    if key == "":
+        raise Exception('Unable to read key from {}; unable to write one too.'.format(config.CLUSTER_KEY_FILE))
+
+    return key
+
+
+def generate_cluster_key():
+    """Generate a cluster key and write it to CLUSTER_KEY_FILE"""
+    
+    # does file exist?
+    if os.path.isfile(config.CLUSTER_KEY_FILE):
+        # it better be empty.
+        if os.path.getsize(config.CLUSTER_KEY_FILE) > 0:
+            raise Exception('Key file not empty'.format(config.CLUSTER_KEY_FILE))
+
+    with open(config.CLUSTER_KEY_FILE, 'w') as f:
+        # generate a key
+        tmpkey = os.urandom(32)
+        if len(tmpkey) != 32:
+            raise Exception('Only got {} bytes from os.urandom(), expected {}'.format(len(tmpkey), 32))
+
+        # write it
+        f.seek(0)
+        f.write(tmpkey)
+        tmpkey = ''

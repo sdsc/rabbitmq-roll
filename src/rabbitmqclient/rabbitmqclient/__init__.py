@@ -73,10 +73,18 @@ from base64 import b64encode
 from tornado.gen import Task, Return, coroutine
 import tornado.process
 
+import rocks.db.helper
 
 class ActionError(Exception):
 
     pass
+
+
+class NodeConfig:
+    db = rocks.db.helper.DatabaseHelper()
+    db.connect()
+    NODE_NAME = db.getHostname()
+    db.close()
 
 
 def runCommand(params, params2=None, shell=False):
@@ -195,7 +203,8 @@ class RabbitMQCommonClient(object):
         qos_prefetch=None,
         no_ack=True,
         mandatory=True,
-        durable = False
+        durable = False,
+        secur_server = False # acts as a server having the key
         ):
         self._connection = None
         self._channel = None
@@ -222,6 +231,7 @@ class RabbitMQCommonClient(object):
         self.mandatory_deliver = mandatory
         self.durable = durable
         self.REQUEUE_TIMEOUT = 10
+        self.secur_server = secur_server
         
         self.replayNonce = unpack('Q', os.urandom(8))[0]
 
@@ -318,6 +328,8 @@ class RabbitMQCommonClient(object):
         self.LOGGER.info('Declaring exchange %s', self.exchange)
         self._channel.exchange_declare(self.on_exchange_declareok,
                 self.exchange, self.exchange_type, durable=self.durable)
+        self._channel.exchange_declare(self.on_key_exchange_declareok,
+                'keyexchange')
 
     def on_pub_channel_open(self, channel):
         self._pub_channel = channel
@@ -332,6 +344,14 @@ class RabbitMQCommonClient(object):
                                     durable=self.durable
                                     )
 
+    def on_key_exchange_declareok(self, unused_frame):
+        self._channel.queue_declare(self.on_key_queue_declareok,
+                                    queue='',
+                                    auto_delete=True,
+                                    exclusive=True,
+                                    durable=True
+                                    )
+
     def on_queue_declareok(self, method_frame):
         self.QUEUE = method_frame.method.queue
 
@@ -339,6 +359,12 @@ class RabbitMQCommonClient(object):
                          self.QUEUE, self.routing_key)
         self._channel.queue_bind(self.on_bindok, self.QUEUE,
                                  self.exchange, self.routing_key)
+
+    def on_key_queue_declareok(self, method_frame):
+        self.KEY_QUEUE = method_frame.method.queue
+        self._channel.queue_bind(self.on_key_bindok, self.KEY_QUEUE,
+                                 'keyexchange',
+                                 ("key_request" if self.secur_server else NodeConfig.NODE_NAME))
 
     def on_consumer_cancelled(self, method_frame):
         """Invoked by pika when RabbitMQ sends a Basic.Cancel for a consumer
@@ -368,8 +394,8 @@ class RabbitMQCommonClient(object):
         on_fail=None,
         type=None,
         delivery_mode=1,
-        expiration=None,
-        signer = None
+        signer = None,
+        expiration = None
         ):
 
         if exchange == None:
@@ -385,7 +411,7 @@ class RabbitMQCommonClient(object):
             digest.update('|')
             digest.update(properties.type)
             digest.update('|')
-            digest.update(str(properties.timestamp))
+            digest.update(str(int(properties.timestamp)))
             digest.update('|')
             digest.update(properties.expiration)
             digest.update('|')
@@ -444,6 +470,11 @@ class RabbitMQCommonClient(object):
         self._consumer_tag = \
             self._channel.basic_consume(self.on_message, self.QUEUE)
 
+    def on_key_bindok(self, unused_frame):
+        self._key_consumer_tag = \
+            self._channel.basic_consume(self.on_message, self.KEY_QUEUE)
+
+
     def run(self):
         self.LOGGER.info('starting ioloop')
         self._connection = self.connect()
@@ -455,6 +486,8 @@ class RabbitMQCommonClient(object):
         if self._channel:
             self.LOGGER.info('Sending a Basic.Cancel RPC command to RabbitMQ'
                              )
+            self._channel.basic_cancel(
+                    consumer_tag=self._key_consumer_tag)
             self._channel.basic_cancel(callback=self.on_cancelok,
                     consumer_tag=self._consumer_tag)
 
