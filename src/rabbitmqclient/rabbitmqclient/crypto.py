@@ -18,7 +18,7 @@ import os
 KEY_SIZE=32
 IV_SIZE=16
 
-logger = logging.getLogger('cryptoclient.CryptoClient')
+logger = logging.getLogger('rabbitmqclient')
 def setSignMessage(msg, properties):
     """Set some mandatory fields in properties (pika.BasicProperties), add signature header to properties.  Signed using key in PRIVATE_KEY_FILE."""
 
@@ -47,7 +47,7 @@ def digestMessage(msg, properties):
     digest.update('|')
     digest.update(properties.type)
     digest.update('|')
-    digest.update(str(properties.timestamp))
+    digest.update(str(int(properties.timestamp)))
     digest.update('|')
     digest.update(properties.expiration)
     digest.update('|')
@@ -91,6 +91,7 @@ def verifyMessage(expectedSrcs, msg, properties):
     pubKey = RSA.importKey('ssh-rsa %s'%pubKeyRaw)
     expectedSig = b64decode(properties.headers.get('signature'))
     observedDigest = digestMessage(msg=msg, properties=properties)
+    logger.info('%s'%properties)
     v = PKCS1_PSS.new(pubKey)
     if not v.verify(observedDigest, expectedSig):
         logger.error("Failed to verify signature %s"%(b64encode(expectedSig)))
@@ -137,11 +138,13 @@ def RsaEncrypt(dstHost, msg):
     """Encrypt msg with public key for dstHost (so dstHost can decrypt with its private key).  Note that msg must be relatively small, ~256 bytes, and they payload will not be authenticated."""
 
     dstKey = readHostKey(dstHost)
-    if dstKey == None:
-	print 'Unable to locate public key for {} in file {}'.format(dstHost, config.KNOWN_HOSTS_FILE)
-	return()
+    if dstKey is None:
+        logger.error('Unable to locate public key for {} in file {}'%(dstHost, config.KNOWN_HOSTS_FILE))
+        return
+    else:
+        logger.debug("Pub key for %s is %s"%(dstHost, dstKey))
 
-    dstKey = RSA.importKey('ssh-rsa {}'.format(dstKey))
+    dstKey = RSA.importKey('ssh-rsa %s'%dstKey)
     dstCipher = PKCS1_OAEP.new(dstKey)
     return dstCipher.encrypt(msg)
 
@@ -173,11 +176,11 @@ def clusterEncrypt(clusterKey, msg):
     # create a random IV
     iv = os.urandom(IV_SIZE)
     if len(iv) != IV_SIZE:
-	raise Exception("IV is wrong size. Tried to read {} bytes from urandom".format(IV_SIZE))
+        raise Exception("IV is wrong size. Tried to read {} bytes from urandom".format(IV_SIZE))
 
     # sanity-check the key
     if len(clusterKey) != KEY_SIZE:
-	raise Exception("Cluster key is wrong size. Expecting {} bytes, got {}".format(KEY_SIZE, len(clusterKey)))
+        raise Exception("Cluster key is wrong size. Expecting {} bytes, got {}".format(KEY_SIZE, len(clusterKey)))
 
     # encrypt
     cipher = AES.new(clusterKey, AES.MODE_OPENPGP, iv)

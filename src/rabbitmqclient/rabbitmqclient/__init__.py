@@ -69,6 +69,8 @@ from struct import unpack
 
 from Crypto.Hash import SHA256
 from base64 import b64encode
+from crypto import *
+from config import *
 
 from tornado.gen import Task, Return, coroutine
 import tornado.process
@@ -201,9 +203,9 @@ class RabbitMQCommonClient(object):
         queue_name='',
         ssl=True,
         qos_prefetch=None,
-        no_ack=True,
         mandatory=True,
         durable = False,
+        encryption = False,
         secur_server = False # acts as a server having the key
         ):
         self._connection = None
@@ -216,7 +218,6 @@ class RabbitMQCommonClient(object):
         self._pw = locator.RABBITMQ_PW
         self._username = username
         self._vhost = vhost
-        self.no_ack = no_ack
         self.process_message = process_message
         self.on_connection_open_client = on_open
         self.exchange = exchange
@@ -231,9 +232,16 @@ class RabbitMQCommonClient(object):
         self.mandatory_deliver = mandatory
         self.durable = durable
         self.REQUEUE_TIMEOUT = 10
+        self.encryption = encryption
         self.secur_server = secur_server
         
-        self.replayNonce = unpack('Q', os.urandom(8))[0]
+        if(encryption):
+            self.replayNonce = unpack('Q', os.urandom(8))[0]
+            with open(PRIVATE_KEY_FILE, 'r') as f:
+                privKey = RSA.importKey(f.read())
+                self.signer = PKCS1_PSS.new(privKey)
+            if(secur_server):
+                self.clusterKey = read_cluster_key()
 
     def connect(self):
         while not self._closing:
@@ -325,11 +333,14 @@ class RabbitMQCommonClient(object):
         if self.qos_prefetch:
             self._channel.basic_qos(prefetch_count=self.qos_prefetch)
 
-        self.LOGGER.info('Declaring exchange %s', self.exchange)
-        self._channel.exchange_declare(self.on_exchange_declareok,
-                self.exchange, self.exchange_type, durable=self.durable)
-        self._channel.exchange_declare(self.on_key_exchange_declareok,
-                'keyexchange')
+        self.LOGGER.info('Declaring exchanges %s', self.exchange)
+        if(self.encryption):
+            self._channel.exchange_declare(self.on_key_exchange_declareok,
+                    'keyexchange')
+        
+        if(not self.encryption or self.secur_server):
+            self._channel.exchange_declare(self.on_exchange_declareok,
+                    self.exchange, self.exchange_type, durable=self.durable)
 
     def on_pub_channel_open(self, channel):
         self._pub_channel = channel
@@ -393,19 +404,21 @@ class RabbitMQCommonClient(object):
         correlation_id=None,
         on_fail=None,
         type=None,
-        delivery_mode=1,
-        signer = None,
-        expiration = None
+        delivery_mode=1
         ):
 
-        if exchange == None:
+        if exchange is None:
             exchange = self.exchange
+
+        expiration = None if not self.encryption else MSG_TTL
         properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
                 , reply_to=reply_to, message_id=str(self.replayNonce),
                 correlation_id=correlation_id, type=type, delivery_mode=delivery_mode,
                 timestamp = time.time(), expiration=expiration)
 
-        if(signer):
+        if(self.encryption):
+            
+            self.LOGGER.info('%s'%properties)
             digest = SHA256.new()
             digest.update(properties.message_id)
             digest.update('|')
@@ -419,9 +432,11 @@ class RabbitMQCommonClient(object):
             digest.update('|')
             digest.update(properties.reply_to)
 
-            sig = signer.sign(digest)
+            sig = self.signer.sign(digest)
 
             properties.headers = dict(signature = b64encode(sig))
+
+            message = clusterEncrypt(self.clusterKey, message)
 
         self._pub_channel.basic_publish(exchange, routing_key, message,
                 properties, mandatory=self.mandatory_deliver)
@@ -447,6 +462,13 @@ class RabbitMQCommonClient(object):
 
         ret = None
         if self.process_message:
+            if(self.encryption):
+                ciphertext = verifyMessage(["hpcdev-pub03"], body, properties)
+                if(ciphertext is None):
+                    self.LOGGER.error("Message verification failed")
+                    #return
+
+                body = clusterDecrypt(self.clusterKey, body)
             ret = self.process_message(properties, body, basic_deliver)
 
         if ret == False:
@@ -454,8 +476,41 @@ class RabbitMQCommonClient(object):
                     self._channel.basic_nack(basic_deliver.delivery_tag))
             self.LOGGER.debug('Nacked message %s'
                               % basic_deliver.delivery_tag)
-        elif self.no_ack:
+        else:
             self._channel.basic_ack(basic_deliver.delivery_tag)
+
+    def on_key_message(
+        self,
+        unused_channel,
+        basic_deliver,
+        properties,
+        body,
+        ):
+        self.LOGGER.info('Received message # %s from %s: %s',
+                         basic_deliver.delivery_tag, properties.app_id,
+                         body)
+
+        if(self.secur_server and properties.type == 'key_request'):
+            msg = RsaEncrypt(dstHost=properties.reply_to, msg=self.clusterKey)
+
+            send_properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
+                , reply_to=NodeConfig.NODE_NAME, message_id=str(self.replayNonce),
+                type="key_response", delivery_mode=2,
+                timestamp = time.time(), expiration=MSG_TTL)
+
+            digest = digestMessage(msg, send_properties)
+            sig = self.signer.sign(digest)
+            send_properties.headers = dict(signature = b64encode(sig))
+
+            self._pub_channel.basic_publish("keyexchange", properties.reply_to, msg,
+                send_properties)
+
+            self.replayNonce += 1
+        elif(not self.secur_server and properties.type == 'key_response'):
+            self.clusterKey = RsaDecrypt(body)
+            self.LOGGER.debug("Got cluster key %s, initing regular queues"%self.clusterKey)
+            self._channel.exchange_declare(self.on_exchange_declareok,
+                    self.exchange, self.exchange_type, durable=self.durable)
 
     def on_cancelok(self, unused_frame):
         self.LOGGER.info('RabbitMQ acknowledged the cancellation of the consumer. Closing the channel')
@@ -472,8 +527,23 @@ class RabbitMQCommonClient(object):
 
     def on_key_bindok(self, unused_frame):
         self._key_consumer_tag = \
-            self._channel.basic_consume(self.on_message, self.KEY_QUEUE)
+            self._channel.basic_consume(self.on_key_message, self.KEY_QUEUE, no_ack=True)
+        if(not self.secur_server):
+            message = json.dumps({"msg":"Gimme da key"})
 
+            properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
+                , reply_to=NodeConfig.NODE_NAME, message_id=str(self.replayNonce),
+                type="key_request", delivery_mode=2,
+                timestamp = time.time(), expiration=MSG_TTL)
+
+            digest = digestMessage(message, properties)
+            sig = self.signer.sign(digest)
+            properties.headers = dict(signature = b64encode(sig))
+
+            self._pub_channel.basic_publish("keyexchange", "key_request", message,
+                properties)
+
+            self.replayNonce += 1
 
     def run(self):
         self.LOGGER.info('starting ioloop')
