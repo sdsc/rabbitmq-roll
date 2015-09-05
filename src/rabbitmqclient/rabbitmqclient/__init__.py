@@ -420,18 +420,7 @@ class RabbitMQCommonClient(object):
             
             message = clusterEncrypt(self.clusterKey, message)
 
-            digest = SHA256.new()
-            digest.update(properties.message_id)
-            digest.update('|')
-            digest.update(properties.type)
-            digest.update('|')
-            digest.update(str(int(properties.timestamp)))
-            digest.update('|')
-            digest.update(properties.expiration)
-            digest.update('|')
-            digest.update(message)
-            digest.update('|')
-            digest.update(properties.reply_to)
+            digest = digestMessage(message, properties)
 
             sig = self.signer.sign(digest)
 
