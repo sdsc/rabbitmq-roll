@@ -234,9 +234,9 @@ class RabbitMQCommonClient(object):
         self.REQUEUE_TIMEOUT = 10
         self.encryption = encryption
         self.secur_server = secur_server
+        self.replayNonce = unpack('Q', os.urandom(8))[0]
         
         if(encryption):
-            self.replayNonce = unpack('Q', os.urandom(8))[0]
             with open(PRIVATE_KEY_FILE, 'r') as f:
                 privKey = RSA.importKey(f.read())
                 self.signer = PKCS1_PSS.new(privKey)
