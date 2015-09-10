@@ -86,6 +86,7 @@ class NodeConfig:
     db = rocks.db.helper.DatabaseHelper()
     db.connect()
     NODE_NAME = db.getHostname()
+    FRONTEND_NAME = db.getFrontendName()
     db.close()
 
 
@@ -501,6 +502,10 @@ class RabbitMQCommonClient(object):
 
             self.replayNonce += 1
         elif(not self.secur_server and properties.type == 'key_response'):
+            if(properties.reply_to != NodeConfig.FRONTEND_NAME):
+                self.LOGGER.error("Not getting keys from hosts other than frontend, %s != %s"%(NodeConfig.FRONTEND_NAME, properties.reply_to))
+                return
+
             self.clusterKey = RsaDecrypt(ciphertext)
             self.LOGGER.debug("Got cluster key %s, initing regular queues"%self.clusterKey)
             self._channel.exchange_declare(self.on_exchange_declareok,
