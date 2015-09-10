@@ -90,10 +90,10 @@ class NodeConfig:
     db.close()
 
 
-def runCommand(params, params2=None, shell=False):
+def runCommand(params, params2=None):
     try:
         cmd = subprocess.Popen(params, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, shell=shell)
+                               stderr=subprocess.PIPE, shell=False)
     except OSError, e:
         raise ActionError('Command %s failed: %s' % (params[0], str(e)))
 
@@ -101,7 +101,7 @@ def runCommand(params, params2=None, shell=False):
         try:
             cmd2 = subprocess.Popen(params2, stdin=cmd.stdout,
                                     stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, shell=shell)
+                                    stderr=subprocess.PIPE, shell=False)
         except OSError, e:
             raise ActionError('Command %s failed: %s' % (params2[0],
                               str(e)))
@@ -124,7 +124,7 @@ def runCommand(params, params2=None, shell=False):
 STREAM = tornado.process.Subprocess.STREAM
 
 @coroutine
-def runCommandBackground(cmdlist, shell=False):
+def runCommandBackground(cmdlist):
     """
     Wrapper around subprocess call using Tornado's Subprocess class.
     This routine can fork a process in the background without blocking the
@@ -138,7 +138,7 @@ def runCommandBackground(cmdlist, shell=False):
     # tornado.process.initialize()
 
     sub_process = tornado.process.Subprocess(cmdlist, stdout=STREAM,
-            stderr=STREAM, shell=shell)
+            stderr=STREAM, shell=False)
 
     # we need to set_exit_callback to fetch the return value
     # the function can even be empty by it must be set or the
@@ -235,9 +235,9 @@ class RabbitMQCommonClient(object):
         self.REQUEUE_TIMEOUT = 10
         self.encryption = encryption
         self.secur_server = secur_server
+        self.replayNonce = unpack('Q', os.urandom(8))[0]
         
         if(encryption):
-            self.replayNonce = unpack('Q', os.urandom(8))[0]
             with open(PRIVATE_KEY_FILE, 'r') as f:
                 privKey = RSA.importKey(f.read())
                 self.signer = PKCS1_PSS.new(privKey)
