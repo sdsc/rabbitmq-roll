@@ -330,7 +330,6 @@ class RabbitMQCommonClient(object):
         self.LOGGER.info('Channel opened')
         self._channel = channel
         self._channel.add_on_close_callback(self.on_channel_closed)
-        self._channel.add_on_return_callback(self.on_return_callback)
         if self.qos_prefetch:
             self._channel.basic_qos(prefetch_count=self.qos_prefetch)
 
@@ -345,6 +344,7 @@ class RabbitMQCommonClient(object):
 
     def on_pub_channel_open(self, channel):
         self._pub_channel = channel
+        self._pub_channel.add_on_return_callback(self.on_return_callback)
 
     def on_exchange_declareok(self, unused_frame):
         self.LOGGER.info('Exchange declared')
@@ -388,13 +388,14 @@ class RabbitMQCommonClient(object):
         if self._channel:
             self._channel.close()
 
-    def on_return_callback(self, method_frame):
+    def on_return_callback(self,  _channel, method, properties, body):
         """Method is called when message can't be delivered
         """
 
-        self.LOGGER.error(method_frame[2])
         if method_frame[2].message_id in self.sent_msg.keys():
             self.sent_msg.pop(method_frame[2].message_id)()
+        else
+            self.LOGGER.error("Couldn't deliver message %s %s: host is not available"%(properties, body))
 
     def publish_message(
         self,
