@@ -1,0 +1,11 @@
+--- pika/connection.py	2016-03-29 16:06:11.613485402 -0700
++++ pika/connection.py	2015-09-02 10:32:55.000000000 -0700
+@@ -1355,7 +1355,7 @@
+         :param str reply_text: The text close reason
+ 
+         """
+-        LOGGER.warning('Disconnected from RabbitMQ at %s:%i (%s): %s',
++        LOGGER.debug('Disconnected from RabbitMQ at %s:%i (%s): %s',
+                        self.params.host, self.params.port, reply_code,
+                        reply_text)
+         self._set_connection_state(self.CONNECTION_CLOSED)

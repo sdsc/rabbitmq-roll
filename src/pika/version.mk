@@ -1,7 +1,7 @@
 PKGROOT		   = usr
 NAME               = pika
-VERSION            = 0.9.14
-RELEASE            = 1
+VERSION            = 0.10.0
+RELEASE            = 0
 TARBALL_POSTFIX    = tar.gz
 
 SRC_SUBDIR         = pika

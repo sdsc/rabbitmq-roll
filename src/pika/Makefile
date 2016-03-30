@@ -74,6 +74,7 @@ build: $(SRC_DIRS)
 install::
 	( \
 	  cd $(SOURCE_DIR); \
+	  patch -p0 < $(CURDIR)/warn.patch; \
 	  $(PY.PATH) setup.py install --root=$(ROOT) \
 	)
 	@echo "::: Package $(NAME) install complete :::"
