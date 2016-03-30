@@ -17,6 +17,8 @@
 	$Log$
 	</changelog>
 
+	<package>cryptoserver</package>
+
 <post>
 	RabbitMQServiceNode=$(/opt/rocks/bin/rocks list host attr | /bin/awk -F: '/RABBITMQ_Server /{print $1}')
     echo $RabbitMQServiceNode &gt; /opt/rocks/etc/rabbitmq.conf

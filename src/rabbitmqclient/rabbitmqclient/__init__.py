@@ -65,19 +65,35 @@ import time
 import sys
 import uuid
 
+from struct import unpack
+
+from Crypto.Hash import SHA256
+from base64 import b64encode
+from crypto import *
+from config import *
+
 from tornado.gen import Task, Return, coroutine
 import tornado.process
 
+import rocks.db.helper
 
 class ActionError(Exception):
 
     pass
 
 
-def runCommand(params, params2=None, shell=False):
+class NodeConfig:
+    db = rocks.db.helper.DatabaseHelper()
+    db.connect()
+    NODE_NAME = db.getHostname()
+    FRONTEND_NAME = db.getFrontendName()
+    db.close()
+
+
+def runCommand(params, params2=None):
     try:
         cmd = subprocess.Popen(params, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE, shell=shell)
+                               stderr=subprocess.PIPE, shell=False)
     except OSError, e:
         raise ActionError('Command %s failed: %s' % (params[0], str(e)))
 
@@ -85,7 +101,7 @@ def runCommand(params, params2=None, shell=False):
         try:
             cmd2 = subprocess.Popen(params2, stdin=cmd.stdout,
                                     stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, shell=shell)
+                                    stderr=subprocess.PIPE, shell=False)
         except OSError, e:
             raise ActionError('Command %s failed: %s' % (params2[0],
                               str(e)))
@@ -108,7 +124,7 @@ def runCommand(params, params2=None, shell=False):
 STREAM = tornado.process.Subprocess.STREAM
 
 @coroutine
-def runCommandBackground(cmdlist, shell=False):
+def runCommandBackground(cmdlist):
     """
     Wrapper around subprocess call using Tornado's Subprocess class.
     This routine can fork a process in the background without blocking the
@@ -122,7 +138,7 @@ def runCommandBackground(cmdlist, shell=False):
     # tornado.process.initialize()
 
     sub_process = tornado.process.Subprocess(cmdlist, stdout=STREAM,
-            stderr=STREAM, shell=shell)
+            stderr=STREAM, shell=False)
 
     # we need to set_exit_callback to fetch the return value
     # the function can even be empty by it must be set or the
@@ -188,9 +204,10 @@ class RabbitMQCommonClient(object):
         queue_name='',
         ssl=True,
         qos_prefetch=None,
-        no_ack=True,
         mandatory=True,
-        durable = False
+        durable = False,
+        encryption = False,
+        secur_server = False # acts as a server having the key
         ):
         self._connection = None
         self._channel = None
@@ -202,7 +219,6 @@ class RabbitMQCommonClient(object):
         self._pw = locator.RABBITMQ_PW
         self._username = username
         self._vhost = vhost
-        self.no_ack = no_ack
         self.process_message = process_message
         self.on_connection_open_client = on_open
         self.exchange = exchange
@@ -217,6 +233,16 @@ class RabbitMQCommonClient(object):
         self.mandatory_deliver = mandatory
         self.durable = durable
         self.REQUEUE_TIMEOUT = 10
+        self.encryption = encryption
+        self.secur_server = secur_server
+        self.replayNonce = unpack('Q', os.urandom(8))[0]
+        
+        if(encryption):
+            with open(PRIVATE_KEY_FILE, 'r') as f:
+                privKey = RSA.importKey(f.read())
+                self.signer = PKCS1_PSS.new(privKey)
+            if(secur_server):
+                self.clusterKey = read_cluster_key()
 
     def connect(self):
         while not self._closing:
@@ -304,16 +330,21 @@ class RabbitMQCommonClient(object):
         self.LOGGER.info('Channel opened')
         self._channel = channel
         self._channel.add_on_close_callback(self.on_channel_closed)
-        self._channel.add_on_return_callback(self.on_return_callback)
         if self.qos_prefetch:
             self._channel.basic_qos(prefetch_count=self.qos_prefetch)
 
-        self.LOGGER.info('Declaring exchange %s', self.exchange)
-        self._channel.exchange_declare(self.on_exchange_declareok,
-                self.exchange, self.exchange_type, durable=self.durable)
+        self.LOGGER.info('Declaring exchanges %s', self.exchange)
+        if(self.encryption):
+            self._channel.exchange_declare(self.on_key_exchange_declareok,
+                    'keyexchange')
+        
+        if(not self.encryption or self.secur_server):
+            self._channel.exchange_declare(self.on_exchange_declareok,
+                    self.exchange, self.exchange_type, durable=self.durable)
 
     def on_pub_channel_open(self, channel):
         self._pub_channel = channel
+        self._pub_channel.add_on_return_callback(self.on_return_callback)
 
     def on_exchange_declareok(self, unused_frame):
         self.LOGGER.info('Exchange declared')
@@ -325,6 +356,14 @@ class RabbitMQCommonClient(object):
                                     durable=self.durable
                                     )
 
+    def on_key_exchange_declareok(self, unused_frame):
+        self._channel.queue_declare(self.on_key_queue_declareok,
+                                    queue='',
+                                    auto_delete=True,
+                                    exclusive=True,
+                                    durable=True
+                                    )
+
     def on_queue_declareok(self, method_frame):
         self.QUEUE = method_frame.method.queue
 
@@ -332,6 +371,12 @@ class RabbitMQCommonClient(object):
                          self.QUEUE, self.routing_key)
         self._channel.queue_bind(self.on_bindok, self.QUEUE,
                                  self.exchange, self.routing_key)
+
+    def on_key_queue_declareok(self, method_frame):
+        self.KEY_QUEUE = method_frame.method.queue
+        self._channel.queue_bind(self.on_key_bindok, self.KEY_QUEUE,
+                                 'keyexchange',
+                                 ("key_request" if self.secur_server else NodeConfig.NODE_NAME))
 
     def on_consumer_cancelled(self, method_frame):
         """Invoked by pika when RabbitMQ sends a Basic.Cancel for a consumer
@@ -343,13 +388,14 @@ class RabbitMQCommonClient(object):
         if self._channel:
             self._channel.close()
 
-    def on_return_callback(self, method_frame):
+    def on_return_callback(self,  _channel, method, properties, body):
         """Method is called when message can't be delivered
         """
 
-        self.LOGGER.error(method_frame[2])
         if method_frame[2].message_id in self.sent_msg.keys():
             self.sent_msg.pop(method_frame[2].message_id)()
+        else
+            self.LOGGER.error("Couldn't deliver message %s %s: host is not available"%(properties, body))
 
     def publish_message(
         self,
@@ -363,17 +409,33 @@ class RabbitMQCommonClient(object):
         delivery_mode=1
         ):
 
-        if exchange == None:
+        if exchange is None:
             exchange = self.exchange
+
+        expiration = None if not self.encryption else MSG_TTL
         properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
-                , reply_to=reply_to, message_id=str(uuid.uuid4()),
-                correlation_id=correlation_id, type=type, delivery_mode=delivery_mode)
+                , reply_to=reply_to, message_id=str(self.replayNonce),
+                correlation_id=correlation_id, type=type, delivery_mode=delivery_mode,
+                timestamp = time.time(), expiration=expiration)
+
+        if(self.encryption):
+            
+            message = clusterEncrypt(self.clusterKey, message)
+
+            digest = digestMessage(message, properties)
+
+            sig = self.signer.sign(digest)
+
+            properties.headers = dict(signature = b64encode(sig))
+
+
         self._pub_channel.basic_publish(exchange, routing_key, message,
                 properties, mandatory=self.mandatory_deliver)
         if on_fail:
             self.sent_msg[properties.message_id] = on_fail
         self.LOGGER.info('Published message %s %s %s' % (message,
                          exchange, routing_key))
+        self.replayNonce += 1
 
     def on_message(
         self,
@@ -391,6 +453,13 @@ class RabbitMQCommonClient(object):
 
         ret = None
         if self.process_message:
+            if(self.encryption):
+                ciphertext = verifyMessage(body, properties)
+                if(ciphertext is None):
+                    self.LOGGER.error("Message verification failed")
+                    return
+
+                body = clusterDecrypt(self.clusterKey, body)
             ret = self.process_message(properties, body, basic_deliver)
 
         if ret == False:
@@ -398,8 +467,50 @@ class RabbitMQCommonClient(object):
                     self._channel.basic_nack(basic_deliver.delivery_tag))
             self.LOGGER.debug('Nacked message %s'
                               % basic_deliver.delivery_tag)
-        elif self.no_ack:
+        else:
             self._channel.basic_ack(basic_deliver.delivery_tag)
+
+    def on_key_message(
+        self,
+        unused_channel,
+        basic_deliver,
+        properties,
+        body,
+        ):
+        self.LOGGER.info('Received message # %s from %s: %s',
+                         basic_deliver.delivery_tag, properties.app_id,
+                         body)
+
+        ciphertext = verifyMessage(body, properties)
+        if(ciphertext is None):
+            self.LOGGER.error("Message verification failed")
+            return
+
+        if(self.secur_server and properties.type == 'key_request'):
+            msg = RsaEncrypt(dstHost=properties.reply_to, msg=self.clusterKey)
+
+            send_properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
+                , reply_to=NodeConfig.NODE_NAME, message_id=str(self.replayNonce),
+                type="key_response", delivery_mode=2,
+                timestamp = time.time(), expiration=MSG_TTL)
+
+            digest = digestMessage(msg, send_properties)
+            sig = self.signer.sign(digest)
+            send_properties.headers = dict(signature = b64encode(sig))
+
+            self._pub_channel.basic_publish("keyexchange", properties.reply_to, msg,
+                send_properties)
+
+            self.replayNonce += 1
+        elif(not self.secur_server and properties.type == 'key_response'):
+            if(properties.reply_to != NodeConfig.FRONTEND_NAME):
+                self.LOGGER.error("Not getting keys from hosts other than frontend, %s != %s"%(NodeConfig.FRONTEND_NAME, properties.reply_to))
+                return
+
+            self.clusterKey = RsaDecrypt(ciphertext)
+            self.LOGGER.debug("Got cluster key %s, initing regular queues"%self.clusterKey)
+            self._channel.exchange_declare(self.on_exchange_declareok,
+                    self.exchange, self.exchange_type, durable=self.durable)
 
     def on_cancelok(self, unused_frame):
         self.LOGGER.info('RabbitMQ acknowledged the cancellation of the consumer. Closing the channel')
@@ -414,6 +525,26 @@ class RabbitMQCommonClient(object):
         self._consumer_tag = \
             self._channel.basic_consume(self.on_message, self.QUEUE)
 
+    def on_key_bindok(self, unused_frame):
+        self._key_consumer_tag = \
+            self._channel.basic_consume(self.on_key_message, self.KEY_QUEUE, no_ack=True)
+        if(not self.secur_server):
+            message = json.dumps({"msg":"Gimme da key"})
+
+            properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
+                , reply_to=NodeConfig.NODE_NAME, message_id=str(self.replayNonce),
+                type="key_request", delivery_mode=2,
+                timestamp = time.time(), expiration=MSG_TTL)
+
+            digest = digestMessage(message, properties)
+            sig = self.signer.sign(digest)
+            properties.headers = dict(signature = b64encode(sig))
+
+            self._pub_channel.basic_publish("keyexchange", "key_request", message,
+                properties)
+
+            self.replayNonce += 1
+
     def run(self):
         self.LOGGER.info('starting ioloop')
         self._connection = self.connect()
@@ -425,6 +556,8 @@ class RabbitMQCommonClient(object):
         if self._channel:
             self.LOGGER.info('Sending a Basic.Cancel RPC command to RabbitMQ'
                              )
+            self._channel.basic_cancel(
+                    consumer_tag=self._key_consumer_tag)
             self._channel.basic_cancel(callback=self.on_cancelok,
                     consumer_tag=self._consumer_tag)
 
