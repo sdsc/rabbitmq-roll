@@ -214,6 +214,7 @@ class RabbitMQCommonClient(object):
         self._pub_channel = None
         self._closing = False
         self._consumer_tag = None
+        self._key_consumer_tag = None
         locator = RabbitMQLocator(username)
         self._url = locator.RABBITMQ_URL
         self._pw = locator.RABBITMQ_PW
@@ -556,10 +557,12 @@ class RabbitMQCommonClient(object):
         if self._channel:
             self.LOGGER.info('Sending a Basic.Cancel RPC command to RabbitMQ'
                              )
-            self._channel.basic_cancel(
-                    consumer_tag=self._key_consumer_tag)
-            self._channel.basic_cancel(callback=self.on_cancelok,
-                    consumer_tag=self._consumer_tag)
+            if(self._key_consumer_tag):
+                self._channel.basic_cancel(
+                        consumer_tag=self._key_consumer_tag)
+            if(self._consumer_tag):
+                self._channel.basic_cancel(callback=self.on_cancelok,
+                        consumer_tag=self._consumer_tag)
 
         # for some reason the tornado ioloop does not get stopped when hit
         # by a SIGTERM, so we don't need to re-start it here
