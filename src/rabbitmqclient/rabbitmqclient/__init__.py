@@ -393,9 +393,9 @@ class RabbitMQCommonClient(object):
         """Method is called when message can't be delivered
         """
 
-        if method_frame[2].message_id in self.sent_msg.keys():
-            self.sent_msg.pop(method_frame[2].message_id)()
-        else
+        if properties.message_id in self.sent_msg.keys():
+            self.sent_msg.pop(properties.message_id)()
+        else:
             self.LOGGER.error("Couldn't deliver message %s %s: host is not available"%(properties, body))
 
     def publish_message(
