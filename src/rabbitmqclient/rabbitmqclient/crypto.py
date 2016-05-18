@@ -70,7 +70,7 @@ def verifyMessage(msg, properties):
 
     # anti-replay check
     id = "%s|%s"%(properties.reply_to, properties.message_id)
-    db = anydbm.open(config.REPLAY_CACHE_FILE, 'c')
+    db = anydbm.open(config.REPLAY_CACHE_FILE, 'c', 0600)
     # note old entries (don't delete here since it screws up the iterator)
     oldEntries = []
     for h,exp in db.iteritems():
@@ -196,3 +196,4 @@ def generate_cluster_key():
         f.seek(0)
         f.write(tmpkey)
         tmpkey = ''
+    os.chmod(config.CLUSTER_KEY_FILE, 0600)
