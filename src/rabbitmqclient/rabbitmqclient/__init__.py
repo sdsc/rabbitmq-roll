@@ -179,10 +179,13 @@ class RabbitMQLocator:
 
     LOGGER = logging.getLogger(__name__)
 
-    def __init__(self, config_name):
-        with open('/opt/rocks/etc/rabbitmq_%s.conf' % config_name, 'r'
-                  ) as rabbit_pw_file:
-            self.RABBITMQ_PW = rabbit_pw_file.read().rstrip('\n')
+    def __init__(self, config_name, read_pw = True):
+        if(read_pw):
+            with open('/opt/rocks/etc/rabbitmq_%s.conf' % config_name, 'r'
+                      ) as rabbit_pw_file:
+                self.RABBITMQ_PW = rabbit_pw_file.read().rstrip('\n')
+        else:
+            self.RABBITMQ_PW = None
         with open('/opt/rocks/etc/rabbitmq.conf', 'r') as \
             rabbit_url_file:
             self.RABBITMQ_URL = rabbit_url_file.read().rstrip('\n')
@@ -202,12 +205,13 @@ class RabbitMQCommonClient(object):
         on_open=None,
         routing_key='',
         queue_name='',
-        ssl=True,
+        ssl=True, # Use SSL connection
         qos_prefetch=None,
         mandatory=True,
         durable = False,
         encryption = False,
-        secur_server = False # acts as a server having the key
+        secur_server = False, # acts as a server having the key
+        ssl_options = False # client certificates
         ):
         self._connection = None
         self._channel = None
@@ -215,7 +219,7 @@ class RabbitMQCommonClient(object):
         self._closing = False
         self._consumer_tag = None
         self._key_consumer_tag = None
-        locator = RabbitMQLocator(username)
+        locator = RabbitMQLocator(username, read_pw = not ssl_options)
         self._url = locator.RABBITMQ_URL
         self._pw = locator.RABBITMQ_PW
         self._username = username
@@ -237,6 +241,7 @@ class RabbitMQCommonClient(object):
         self.encryption = encryption
         self.secur_server = secur_server
         self.replayNonce = unpack('Q', os.urandom(8))[0]
+        self.ssl_options = ssl_options
         
         if(encryption):
             with open(PRIVATE_KEY_FILE, 'r') as f:
@@ -250,14 +255,18 @@ class RabbitMQCommonClient(object):
             self.LOGGER.info('Connecting to %s', self._url)
 
             try:
-                credentials = pika.PlainCredentials(self._username,
-                        self._pw)
+                if(ssl_options):
+                    credentials = pika.credentials.ExternalCredentials()
+                else:
+                    credentials = pika.PlainCredentials(self._username,
+                            self._pw)
                 parameters = pika.ConnectionParameters(
                     self._url,
                     self.port,
                     self._vhost,
                     credentials,
                     ssl=self.ssl,
+                    ssl_options=self.ssl_options,
                     heartbeat_interval=self.heartbeat,
                     )
 
