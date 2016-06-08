@@ -82,14 +82,6 @@ class ActionError(Exception):
     pass
 
 
-class NodeConfig:
-    db = rocks.db.helper.DatabaseHelper()
-    db.connect()
-    NODE_NAME = db.getHostname()
-    FRONTEND_NAME = db.getFrontendName()
-    db.close()
-
-
 def runCommand(params, params2=None):
     try:
         cmd = subprocess.Popen(params, stdout=subprocess.PIPE,
@@ -211,7 +203,8 @@ class RabbitMQCommonClient(object):
         durable = False,
         encryption = False,
         secur_server = False, # acts as a server having the key
-        ssl_options = False # client certificates
+        ssl_options = False, # client certificates
+        frontend = None # for certs exchange
         ):
         self._connection = None
         self._channel = None
@@ -242,6 +235,7 @@ class RabbitMQCommonClient(object):
         self.secur_server = secur_server
         self.replayNonce = unpack('Q', os.urandom(8))[0]
         self.ssl_options = ssl_options
+        self.frontend = frontend
         
         if(encryption):
             with open(PRIVATE_KEY_FILE, 'r') as f:
@@ -255,7 +249,7 @@ class RabbitMQCommonClient(object):
             self.LOGGER.info('Connecting to %s', self._url)
 
             try:
-                if(ssl_options):
+                if(self.ssl_options):
                     credentials = pika.credentials.ExternalCredentials()
                 else:
                     credentials = pika.PlainCredentials(self._username,
@@ -386,7 +380,7 @@ class RabbitMQCommonClient(object):
         self.KEY_QUEUE = method_frame.method.queue
         self._channel.queue_bind(self.on_key_bindok, self.KEY_QUEUE,
                                  'keyexchange',
-                                 ("key_request" if self.secur_server else NodeConfig.NODE_NAME))
+                                 ("key_request" if self.secur_server else self.routing_key))
 
     def on_consumer_cancelled(self, method_frame):
         """Invoked by pika when RabbitMQ sends a Basic.Cancel for a consumer
@@ -500,7 +494,7 @@ class RabbitMQCommonClient(object):
             msg = RsaEncrypt(dstHost=properties.reply_to, msg=self.clusterKey)
 
             send_properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
-                , reply_to=NodeConfig.NODE_NAME, message_id=str(self.replayNonce),
+                , reply_to=self.routing_key, message_id=str(self.replayNonce),
                 type="key_response", delivery_mode=2,
                 timestamp = time.time(), expiration=MSG_TTL)
 
@@ -513,8 +507,8 @@ class RabbitMQCommonClient(object):
 
             self.replayNonce += 1
         elif(not self.secur_server and properties.type == 'key_response'):
-            if(properties.reply_to != NodeConfig.FRONTEND_NAME):
-                self.LOGGER.error("Not getting keys from hosts other than frontend, %s != %s"%(NodeConfig.FRONTEND_NAME, properties.reply_to))
+            if(properties.reply_to != self.frontend):
+                self.LOGGER.error("Not getting keys from hosts other than frontend, %s != %s"%(self.frontend, properties.reply_to))
                 return
 
             self.clusterKey = RsaDecrypt(ciphertext)
@@ -542,7 +536,7 @@ class RabbitMQCommonClient(object):
             message = json.dumps({"msg":"Gimme da key"})
 
             properties = pika.BasicProperties(app_id='rocks.RabbitMQClient'
-                , reply_to=NodeConfig.NODE_NAME, message_id=str(self.replayNonce),
+                , reply_to=self.routing_key, message_id=str(self.replayNonce),
                 type="key_request", delivery_mode=2,
                 timestamp = time.time(), expiration=MSG_TTL)
 
