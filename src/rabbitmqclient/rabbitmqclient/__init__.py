@@ -424,6 +424,9 @@ class RabbitMQCommonClient(object):
 
         if(self.encryption):
             
+            if(not properties.reply_to):
+                properties.reply_to = self.routing_key
+
             message = clusterEncrypt(self.clusterKey, message)
 
             digest = digestMessage(message, properties)
@@ -458,7 +461,7 @@ class RabbitMQCommonClient(object):
         ret = None
         if self.process_message:
             if(self.encryption):
-                ciphertext = verifyMessage(body, properties)
+                ciphertext = verifyMessage(body, properties, frontend=self.frontend)
                 if(ciphertext is None):
                     self.LOGGER.error("Message verification failed")
                     return

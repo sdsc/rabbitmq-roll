@@ -29,7 +29,7 @@ def digestMessage(msg, properties):
     digest = SHA256.new()
     digest.update(properties.message_id)
     digest.update('|')
-    digest.update(properties.type)
+    digest.update(properties.type if properties.type else "")
     digest.update('|')
     digest.update(str(int(properties.timestamp)))
     digest.update('|')
@@ -41,14 +41,15 @@ def digestMessage(msg, properties):
     return digest
 
 
-def verifyMessage(msg, properties):
+def verifyMessage(msg, properties, frontend=""):
     """Verify the integrity of the message.  Provide a dictionary of expected sources to check the signature against.  Will perform replay checks.  Returns verified message or None"""
     # check origin and sigs first. No point in processing forged messages.
     if properties.reply_to == None:
         logger.error("No reply_to")
         return None
 
-    pubKeyRaw = readHostKey(properties.reply_to)
+    from_host = properties.reply_to if not properties.reply_to.startswith("amq.") else frontend
+    pubKeyRaw = readHostKey(from_host)
     if pubKeyRaw is None:
         logger.error("No pubKeyRaw")
         return None
