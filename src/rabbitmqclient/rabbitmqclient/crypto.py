@@ -120,7 +120,7 @@ def readHostKey(host):
     try:
         from paramiko import HostKeys
         hostKeys = HostKeys(config.KNOWN_HOSTS_FILE)
-        k = hostKeys.lookup(host.split(".")[0])['ssh-rsa']
+        k = hostKeys.lookup(host)['ssh-rsa']
         return(k.get_base64())
     except TypeError:
         return None
