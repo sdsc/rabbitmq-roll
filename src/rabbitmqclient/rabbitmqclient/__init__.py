@@ -440,8 +440,12 @@ class RabbitMQCommonClient(object):
                 properties, mandatory=self.mandatory_deliver)
         if on_fail:
             self.sent_msg[properties.message_id] = on_fail
-        self.LOGGER.info('Published message %s %s %s' % (message,
-                         exchange, routing_key))
+        if(self.encryption):
+            self.LOGGER.info('Published message %s %s' % (
+                             exchange, routing_key))
+        else:
+            self.LOGGER.info('Published message %s %s %s' % (message,
+                             exchange, routing_key))
         self.replayNonce += 1
 
     def on_message(
@@ -451,9 +455,13 @@ class RabbitMQCommonClient(object):
         properties,
         body,
         ):
-        self.LOGGER.info('Received message # %s from %s: %s',
-                         basic_deliver.delivery_tag, properties.app_id,
-                         body)
+        if(self.encryption):
+            self.LOGGER.info('Received message # %s from %s',
+                             basic_deliver.delivery_tag, properties.app_id)
+        else:
+            self.LOGGER.info('Received message # %s from %s: %s',
+                             basic_deliver.delivery_tag, properties.app_id,
+                             body)
         if properties.correlation_id and properties.correlation_id \
             in self.sent_msg.keys():
             del self.sent_msg[properties.correlation_id]
