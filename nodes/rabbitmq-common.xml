@@ -17,10 +17,10 @@
 	$Log$
 	</changelog>
 
-	<package>rabbitmqclient</package>
-	<package>pika</package>
-	<package>tornado</package>
-	<package>backports.ssl_match_hostname</package>
-	<package>paramiko</package>
-	<package>pycrypto</package>
+	<package>foundation-python-rabbitmqclient</package>
+	<package>foundation-python-pika</package>
+	<package>foundation-python-tornado</package>
+	<package>foundation-python-backports.ssl_match_hostname</package>
+	<package>foundation-python-paramiko</package>
+	<package>foundation-python-pycrypto</package>
 </kickstart>

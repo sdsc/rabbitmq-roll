@@ -1,12 +1,12 @@
-PKGROOT		   = /opt/pycrypto
-NAME               = pycrypto
-VERSION            = 2.6.1
+PKGROOT		   = /opt/backports.ssl_match_hostname
+NAME               = foundation-python-backports.ssl_match_hostname
+VERSION            = 3.4.0.2
 RELEASE            = 1
 TARBALL_POSTFIX    = tar.gz
 
-SRC_SUBDIR         = pycrypto
+SRC_SUBDIR         = backports.ssl_match_hostname
 
-SOURCE_NAME        = $(NAME)
+SOURCE_NAME        = backports.ssl_match_hostname
 SOURCE_VERSION     = $(VERSION)
 SOURCE_SUFFIX      = tar.gz
 SOURCE_PKG         = $(SOURCE_NAME)-$(SOURCE_VERSION).$(SOURCE_SUFFIX)
