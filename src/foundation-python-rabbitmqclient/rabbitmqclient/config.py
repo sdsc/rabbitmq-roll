@@ -1,11 +1,12 @@
 # configuration stuff
 
-# masters - hosts that can issue commands to the cluster and can provide the cluster key
-Masters = [ 'hpcdev-pub03.sdsc.edu' ]
+import os.path
 
 # constants 
 CLUSTER_KEY_FILE='/var/tmp/clusterkey'
 PRIVATE_KEY_FILE='/etc/ssh/ssh_host_rsa_key'
+if(os.path.isfile("/etc/ssh/real_ssh_host_rsa_key")):
+    PRIVATE_KEY_FILE='/etc/ssh/real_ssh_host_rsa_key'
 KNOWN_HOSTS_FILE='/etc/ssh/ssh_known_hosts'
 REPLAY_CACHE_FILE='/tmp/replaycache'
 
