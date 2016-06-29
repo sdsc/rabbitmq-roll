@@ -32,7 +32,7 @@
         /usr/sbin/groupadd -r rabbitmq
     /usr/bin/getent passwd rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
         /usr/sbin/useradd -c "RabbitMQ service" \
-              -d "/etc/slurm" -g rabbitmq -s /bin/false -r rabbitmq
+              -d "/var/lib/rabbitmq" -g rabbitmq -s /bin/false -r rabbitmq
 
 </post>
 
