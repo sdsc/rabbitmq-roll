@@ -236,6 +236,7 @@ class RabbitMQCommonClient(object):
         self.replayNonce = unpack('Q', os.urandom(8))[0]
         self.ssl_options = ssl_options
         self.frontend = frontend
+        self.kill_timeout_id = None
         
         if(encryption):
             with open(PRIVATE_KEY_FILE, 'r') as f:
@@ -268,6 +269,14 @@ class RabbitMQCommonClient(object):
                     pika.adapters.tornado_connection.TornadoConnection(parameters,
                         self.on_connection_open,
                         stop_ioloop_on_close=False)
+
+                def on_timeout():
+                    self.LOGGER.error("Quitting the daemon because got no key in %s sec"%CONN_TIMEOUT)
+                    self._closing = True
+                    sel_con.close()
+
+                if(not self.kill_timeout_id):
+                    self.kill_timeout_id = sel_con.add_timeout(CONN_TIMEOUT, on_timeout)
 
                 if self.on_connection_open_client:
                     sel_con.add_on_open_callback(self.on_connection_open_client)
@@ -540,6 +549,10 @@ class RabbitMQCommonClient(object):
         self._consumer_tag = \
             self._channel.basic_consume(self.on_message, self.QUEUE)
 
+        if(self.kill_timeout_id):
+            self._connection.remove_timeout(self.kill_timeout_id)
+            self.kill_timeout_id = None
+
     def on_key_bindok(self, unused_frame):
         self._key_consumer_tag = \
             self._channel.basic_consume(self.on_key_message, self.KEY_QUEUE, no_ack=True)
@@ -577,9 +590,11 @@ class RabbitMQCommonClient(object):
             if(self._consumer_tag):
                 self._channel.basic_cancel(callback=self.on_cancelok,
                         consumer_tag=self._consumer_tag)
+        else:
+            self.LOGGER.error("No _channel on closing")
 
         # for some reason the tornado ioloop does not get stopped when hit
         # by a SIGTERM, so we don't need to re-start it here
-        # self._connection.ioloop.start()
+        self._connection.ioloop.start()
 
         self.LOGGER.info('Stopped')
