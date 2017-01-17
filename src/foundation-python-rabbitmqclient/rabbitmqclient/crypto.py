@@ -20,6 +20,8 @@ IV_SIZE=16
 
 logger = logging.getLogger('rabbitmqclient')
 
+hostKeys = None
+
 def digestMessage(msg, properties):
     """Create a digest (sha256 mhash object) of msg and its properties (pika.BasicProperties). You probably want to call digest() of the result."""
 
@@ -66,7 +68,7 @@ def verifyMessage(msg, properties, frontend=""):
     now = time.time()
     expires = (int(properties.expiration) / 1000) + int(properties.timestamp)
     if expires <= now:
-        logging.getLogger('cryptoclient.CryptoClient').error("Message expired $ss ago"%str(now-expires))
+        logging.getLogger('cryptoclient.CryptoClient').error("Message expired %ss ago"%str(now-expires))
         return None
 
     # anti-replay check
@@ -116,10 +118,12 @@ def RsaEncrypt(dstHost, msg):
 
 def readHostKey(host):
     """Read a host key from the known hosts file"""
+    from paramiko import HostKeys
+    global hostKeys
+    if(hostKeys is None):
+        hostKeys = HostKeys(config.KNOWN_HOSTS_FILE)
 
     try:
-        from paramiko import HostKeys
-        hostKeys = HostKeys(config.KNOWN_HOSTS_FILE)
         k = hostKeys.lookup(host)['ssh-rsa']
         return(k.get_base64())
     except TypeError:

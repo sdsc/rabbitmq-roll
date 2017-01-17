@@ -20,4 +20,4 @@ replayNonce = unpack('Q', os.urandom(8))[0]
 # how long do messages live? (in milliseconds / 10E-3 seconds)
 # this MUST BE A STRING
 MSG_TTL = '300000'
-
+CONN_TIMEOUT = 30 # how long to wait for the key from fe
