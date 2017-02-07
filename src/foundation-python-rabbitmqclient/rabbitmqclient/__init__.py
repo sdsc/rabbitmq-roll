@@ -148,25 +148,6 @@ def runCommandBackground(cmdlist):
 
     raise Return((result.splitlines(), error))
 
-def setupLogger(logger):
-    formatter = \
-        logging.Formatter("'%(levelname) -10s %(asctime)s %(name) -30s %(funcName) -35s %(lineno) -5d: %(message)s'"
-                          )
-    handler = logging.FileHandler('/var/log/rocks/rabbitmq-client.log'
-                                  % fname)
-    handler.setFormatter(formatter)
-
-    # for log_name in (logger, 'pika.channel', 'pika.connection', 'rabbit_client.RabbitMQClient'):
-
-    for log_name in [logger,
-                     'rabbitmqclient.rabbitmqclient.RabbitMQCommonClient'
-                     , 'tornado.application']:
-        logging.getLogger(log_name).setLevel(logging.DEBUG)
-        logging.getLogger(log_name).addHandler(handler)
-
-    return handler
-
-
 class RabbitMQLocator:
 
     LOGGER = logging.getLogger(__name__)
@@ -246,8 +227,15 @@ class RabbitMQCommonClient(object):
                 self.clusterKey = read_cluster_key()
 
     def connect(self):
+        retries = CONN_RETRIES
         while not self._closing:
             self.LOGGER.info('Connecting to %s', self._url)
+
+            retries -= 1
+            if(retries == 0):
+                self.LOGGER.error('Couldn\'t connect to RabbitMQ server in %s retries. Quitting.', CONN_RETRIES)
+                self.stop()
+                return
 
             try:
                 if(self.ssl_options):
@@ -280,6 +268,7 @@ class RabbitMQCommonClient(object):
 
                 if self.on_connection_open_client:
                     sel_con.add_on_open_callback(self.on_connection_open_client)
+                self.LOGGER.info('Connected to %s', self._url)
                 return sel_con
             except:
                 self.LOGGER.exception('Error connecting rabbitmq server at %s'
@@ -303,10 +292,10 @@ class RabbitMQCommonClient(object):
             self._connection.add_timeout(5, self.reconnect)
 
     def on_connection_open(self, unused_connection):
-        self.LOGGER.info('Connection opened')
+        self.LOGGER.debug('Connection opened')
         self._connection.add_on_close_callback(self.on_connection_closed)
 
-        self.LOGGER.info('Creating a new channel')
+        self.LOGGER.debug('Creating a new channel')
         self._connection.channel(on_open_callback=self.on_channel_open)
         self._connection.channel(on_open_callback=self.on_pub_channel_open)
 
@@ -340,13 +329,13 @@ class RabbitMQCommonClient(object):
             self._connection.ioloop.stop()
 
     def on_channel_open(self, channel):
-        self.LOGGER.info('Channel opened')
+        self.LOGGER.debug('Channel opened')
         self._channel = channel
         self._channel.add_on_close_callback(self.on_channel_closed)
         if self.qos_prefetch:
             self._channel.basic_qos(prefetch_count=self.qos_prefetch)
 
-        self.LOGGER.info('Declaring exchanges %s', self.exchange)
+        self.LOGGER.debug('Declaring exchanges %s', self.exchange)
         if(self.encryption):
             self._channel.exchange_declare(self.on_key_exchange_declareok,
                     'keyexchange')
@@ -360,8 +349,8 @@ class RabbitMQCommonClient(object):
         self._pub_channel.add_on_return_callback(self.on_return_callback)
 
     def on_exchange_declareok(self, unused_frame):
-        self.LOGGER.info('Exchange declared')
-        self.LOGGER.info('Declaring queue')
+        self.LOGGER.debug('Exchange declared')
+        self.LOGGER.debug('Declaring queue')
         self._channel.queue_declare(self.on_queue_declareok,
                                     queue=self.queue_name,
                                     auto_delete=self.queue_name == '',
@@ -380,7 +369,7 @@ class RabbitMQCommonClient(object):
     def on_queue_declareok(self, method_frame):
         self.QUEUE = method_frame.method.queue
 
-        self.LOGGER.info('Binding %s to %s with %s', self.exchange,
+        self.LOGGER.debug('Binding %s to %s with %s', self.exchange,
                          self.QUEUE, self.routing_key)
         self._channel.queue_bind(self.on_bindok, self.QUEUE,
                                  self.exchange, self.routing_key)
@@ -396,7 +385,7 @@ class RabbitMQCommonClient(object):
         receiving messages.
         """
 
-        self.LOGGER.info('Consumer was cancelled remotely, shutting down: %r'
+        self.LOGGER.debug('Consumer was cancelled remotely, shutting down: %r'
                          , method_frame)
         if self._channel:
             self._channel.close()
@@ -450,10 +439,10 @@ class RabbitMQCommonClient(object):
         if on_fail:
             self.sent_msg[properties.message_id] = on_fail
         if(self.encryption):
-            self.LOGGER.info('Published message %s %s' % (
+            self.LOGGER.debug('Published message %s %s' % (
                              exchange, routing_key))
         else:
-            self.LOGGER.info('Published message %s %s %s' % (message,
+            self.LOGGER.debug('Published message %s %s %s' % (message,
                              exchange, routing_key))
         self.replayNonce += 1
 
@@ -465,10 +454,10 @@ class RabbitMQCommonClient(object):
         body,
         ):
         if(self.encryption):
-            self.LOGGER.info('Received message # %s from %s',
+            self.LOGGER.debug('Received message # %s from %s',
                              basic_deliver.delivery_tag, properties.app_id)
         else:
-            self.LOGGER.info('Received message # %s from %s: %s',
+            self.LOGGER.debug('Received message # %s from %s: %s',
                              basic_deliver.delivery_tag, properties.app_id,
                              body)
         if properties.correlation_id and properties.correlation_id \
@@ -501,7 +490,7 @@ class RabbitMQCommonClient(object):
         properties,
         body,
         ):
-        self.LOGGER.info('Received message # %s from %s: %s',
+        self.LOGGER.debug('Received message # %s from %s: %s',
                          basic_deliver.delivery_tag, properties.app_id,
                          body)
 
@@ -537,13 +526,13 @@ class RabbitMQCommonClient(object):
                     self.exchange, self.exchange_type, durable=self.durable)
 
     def on_cancelok(self, unused_frame):
-        self.LOGGER.info('RabbitMQ acknowledged the cancellation of the consumer. Closing the channel')
+        self.LOGGER.debug('RabbitMQ acknowledged the cancellation of the consumer. Closing the channel')
         self._channel.close()
 
     def on_bindok(self, unused_frame):
-        self.LOGGER.info('Queue bound')
+        self.LOGGER.debug('Queue bound')
 
-        self.LOGGER.info('Adding consumer cancellation callback')
+        self.LOGGER.debug('Adding consumer cancellation callback')
         self._channel.add_on_cancel_callback(self.on_consumer_cancelled)
 
         self._consumer_tag = \
@@ -574,7 +563,7 @@ class RabbitMQCommonClient(object):
             self.replayNonce += 1
 
     def run(self):
-        self.LOGGER.info('starting ioloop')
+        self.LOGGER.debug('starting ioloop')
         self._connection = self.connect()
         self._connection.ioloop.start()
 
@@ -582,7 +571,7 @@ class RabbitMQCommonClient(object):
         self.LOGGER.info('Stopping')
         self._closing = True
         if self._channel:
-            self.LOGGER.info('Sending a Basic.Cancel RPC command to RabbitMQ'
+            self.LOGGER.debug('Sending a Basic.Cancel RPC command to RabbitMQ'
                              )
             if(self._key_consumer_tag):
                 self._channel.basic_cancel(
@@ -593,8 +582,8 @@ class RabbitMQCommonClient(object):
         else:
             self.LOGGER.error("No _channel on closing")
 
+        self.LOGGER.info('Stopped')
         # for some reason the tornado ioloop does not get stopped when hit
         # by a SIGTERM, so we don't need to re-start it here
         self._connection.ioloop.start()
 
-        self.LOGGER.info('Stopped')

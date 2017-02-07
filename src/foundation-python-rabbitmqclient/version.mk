@@ -1,4 +1,4 @@
 NAME = foundation-python-rabbitmqclient
-RELEASE = 0
+RELEASE = 1
 RPM.ARCH	= noarch
 
