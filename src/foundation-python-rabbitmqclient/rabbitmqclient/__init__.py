@@ -585,5 +585,6 @@ class RabbitMQCommonClient(object):
         self.LOGGER.info('Stopped')
         # for some reason the tornado ioloop does not get stopped when hit
         # by a SIGTERM, so we don't need to re-start it here
-        self._connection.ioloop.start()
+        if(self._connection):
+            self._connection.ioloop.stop()
 
