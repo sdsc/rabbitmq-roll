@@ -92,6 +92,12 @@ def verifyMessage(msg, properties, frontend=""):
     # guess it's good.
     return msg
     
+def delReplay(properties):
+    id = "%s|%s"%(properties.reply_to, properties.message_id)
+    db = anydbm.open(config.REPLAY_CACHE_FILE, 'c', 0600)
+    del db[id]
+    db.close()
+
 
 def RsaDecrypt(msg):
     """Decrypt msg with our private key.  Do not use for large messages.  Corresponds to RsaEncrypt()"""

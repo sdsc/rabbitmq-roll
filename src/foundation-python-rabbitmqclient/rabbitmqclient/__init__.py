@@ -480,6 +480,8 @@ class RabbitMQCommonClient(object):
                     self._channel.basic_nack(basic_deliver.delivery_tag))
             self.LOGGER.debug('Nacked message %s'
                               % basic_deliver.delivery_tag)
+            if(self.encryption):
+                delReplay(properties)
         else:
             self._channel.basic_ack(basic_deliver.delivery_tag)
 
