@@ -1,13 +1,13 @@
-#
 # $Id$
 #
 # @Copyright@
 # 
 # 				Rocks(r)
 # 		         www.rocksclusters.org
-# 		       version 6.1.1 (Sand Boa)
+# 		         version 5.6 (Emerald Boa)
+# 		         version 6.1 (Emerald Boa)
 # 
-# Copyright (c) 2000 - 2014 The Regents of the University of California.
+# Copyright (c) 2000 - 2013 The Regents of the University of California.
 # All rights reserved.	
 # 
 # Redistribution and use in source and binary forms, with or without
@@ -55,28 +55,26 @@
 # @Copyright@
 #
 # $Log$
-#
 
 REDHAT.ROOT = $(CURDIR)/../../
 
+
+
 -include $(ROCKSROOT)/etc/Rules.mk
 include Rules.mk
-include $(SDSCDEVEL)/Pull.mk
-include $(SDSCDEVEL)/Rules.mk
+include pull.mk
 
 build: $(SRC_DIRS)
+	tar -xvzf $(SOURCE_PKG)
+	@echo "::: Package $(NAME) build complete :::"
+
+install::
 	( \
 	  cd $(SOURCE_DIR); \
-	  mkdir -p $(REDHAT.ROOT)/RPMS/noarch/ ;\
-	  mkdir -p $(REDHAT.ROOT)/RPMS/x86_64/ ;\
-	  cp -av *.noarch.rpm $(REDHAT.ROOT)/RPMS/noarch/ ;\
-	  cp -av *.x86_64.rpm  $(REDHAT.ROOT)/RPMS/x86_64/ ;\
+	  $(PY.PATH) setup.py install --root=$(ROOT) \
 	)
-	@echo "::: Package $(NAME) build complete :::"
-	
-install::
-	mkdir -p $(ROOT)/$(PKGROOT)
 	@echo "::: Package $(NAME) install complete :::"
 
 clean::
 	rm -rf $(SOURCE_DIR)
+

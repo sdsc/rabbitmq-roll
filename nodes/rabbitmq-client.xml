@@ -17,10 +17,7 @@
 	$Log$
 	</changelog>
 
-	<package>foundation-python-rabbitmqclient</package>
-	<package>foundation-python-pika</package>
-	<package>foundation-python-tornado</package>
-	<package>foundation-python-backports.ssl_match_hostname</package>
-	<package>foundation-python-paramiko</package>
-	<package>foundation-python-pycrypto</package>
+	<package>cryptoclient</package>
+
+
 </kickstart>

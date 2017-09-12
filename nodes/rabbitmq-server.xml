@@ -17,6 +17,8 @@
 	$Log$
 	</changelog>
 
+	<package>cryptoserver</package>
+
 <post>
 
 ## Add the RABBITMQ_Server Attribute, if one doesn't exist
@@ -37,11 +39,11 @@ if [ $? -ne 0 ]; then
     /usr/bin/make -C /var/411 411.mk
 fi
 
-/usr/bin/getent group rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
-    /usr/sbin/groupadd -r rabbitmq
-/usr/bin/getent passwd rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
-    /usr/sbin/useradd -c "RabbitMQ service" \
-   -d "/etc/slurm" -g rabbitmq -s /bin/false -r rabbitmq
+    /usr/bin/getent group rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
+        /usr/sbin/groupadd -r rabbitmq
+    /usr/bin/getent passwd rabbitmq &gt;/dev/null 2&gt;&amp;1 || \
+        /usr/sbin/useradd -c "RabbitMQ service" \
+              -d "/var/lib/rabbitmq" -g rabbitmq -s /bin/false -r rabbitmq
 </post>
 
 

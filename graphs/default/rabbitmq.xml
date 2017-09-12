@@ -32,6 +32,10 @@
 		<to>rabbitmq-server</to>
 	</edge>
 
+	<edge from="client">
+		<to>rabbitmq-client</to>
+	</edge>
+
 	<!-- enforce post section ordering -->
 	<!-- rabbitmq-base post sections execute after base post sections -->
 	<order head="base">
