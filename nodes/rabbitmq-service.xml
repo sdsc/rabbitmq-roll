@@ -17,8 +17,6 @@
 	$Log$
 	</changelog>
 
-	<package>rabbitmq</package>
-	<package>erlang</package>
 	<package>rabbitmq-server</package>
 
 

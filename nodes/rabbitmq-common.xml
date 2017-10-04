@@ -23,4 +23,5 @@
 	<package>foundation-python-backports.ssl_match_hostname</package>
 	<package>foundation-python-paramiko</package>
 	<package>foundation-python-pycrypto</package>
+	<package>erlang</package>
 </kickstart>
