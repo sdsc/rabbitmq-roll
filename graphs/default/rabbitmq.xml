@@ -19,7 +19,7 @@
 	</changelog>
 
 	<!-- add edges here -->
-	<edge from="base" cond="RABBITMQ_Server">
+	<edge from="base" cond="hostname == RABBITMQ_Server">
 		<to>rabbitmq-service</to>
 	</edge>
 
