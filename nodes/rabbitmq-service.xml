@@ -22,8 +22,17 @@
 
 
 <post>
-RABBITMQ_UID=<eval>/usr/bin/getent passwd rabbitmq 2&gt;&amp;1 > /dev/null &amp;&amp; /usr/bin/id -u rabbitmq</eval>
-RABBITMQ_GID=<eval>/usr/bin/getent group rabbitmq 2&gt;&amp;1 > /dev/null &amp;&amp; /usr/bin/id -g rabbitmq</eval>
+RABBITMQ_UID=<eval>/usr/bin/getent passwd rabbitmq 2&gt;&amp;1 &gt; /dev/null &amp;&amp; /usr/bin/id -u rabbitmq</eval>
+RABBITMQ_GID=<eval>/usr/bin/getent group rabbitmq 2&gt;&amp;1 &gt; /dev/null &amp;&amp; /usr/bin/id -g rabbitmq</eval>
+
+### If the above evals are empty, then rabbitmq wasn't a user when
+### kickstart was created.  Read again from the environment
+if [ "x$RABBITMQ_UID" == "x" ]; then
+	RABBITMQ_UID=$(/usr/bin/getent passwd rabbitmq 2&gt;&amp;1 &gt; /dev/null &amp;&amp; /usr/bin/id -u rabbitmq)
+fi
+if [ "x$RABBITMQ_GID" == "x" ]; then
+	RABBITMQ_GID=$(/usr/bin/getent group rabbitmq 2&gt;&amp;1 &gt; /dev/null &amp;&amp; /usr/bin/id -g rabbitmq)
+fi
 
 # rabbitmq UID|GID were created during install of the rabbitmq RPM
 # we must set these to the same value as on the frontend so we don't
