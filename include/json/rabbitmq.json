@@ -2,6 +2,7 @@
     {
         "required": true, 
         "value": "", 
+        "initialize": "Kickstart_PublicHostname",
         "varname": "RABBITMQ_Server", 
         "infoHelp": "Short name of node that runs the RabbitMQ Server. This is often the frontend", 
         "param": "RabbitMQ Server Node", 
