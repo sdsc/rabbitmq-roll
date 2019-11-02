@@ -8,8 +8,8 @@
 	</description>
 
 	<copyright>
-	Copyright (c) 2000 - 2014 The Regents of the University of California.
-	All rights reserved. Rocks(r) v6.1.1 www.rocksclusters.org
+	Copyright (c) 2000 - 2017 The Regents of the University of California.
+	All rights reserved. Rocks(r) v6.2/v7.0 www.rocksclusters.org
 	
 	</copyright>
 
@@ -17,15 +17,22 @@
 	$Log$
 	</changelog>
 
-	<package>rabbitmq</package>
-	<package>erlang</package>
 	<package>rabbitmq-server</package>
 
 
 
 <post>
-RABBITMQ_UID=<eval>/usr/bin/getent passwd rabbitmq 2&gt;&amp;1 > /dev/null &amp;&amp; /usr/bin/id -u rabbitmq</eval>
-RABBITMQ_GID=<eval>/usr/bin/getent group rabbitmq 2&gt;&amp;1 > /dev/null &amp;&amp; /usr/bin/id -g rabbitmq</eval>
+RABBITMQ_UID=<eval>/usr/bin/getent passwd rabbitmq 2&gt;&amp;1 &gt; /dev/null &amp;&amp; /usr/bin/id -u rabbitmq</eval>
+RABBITMQ_GID=<eval>/usr/bin/getent group rabbitmq 2&gt;&amp;1 &gt; /dev/null &amp;&amp; /usr/bin/id -g rabbitmq</eval>
+
+### If the above evals are empty, then rabbitmq wasn't a user when
+### kickstart was created.  Read again from the environment
+if [ "x$RABBITMQ_UID" == "x" ]; then
+	RABBITMQ_UID=$(/usr/bin/getent passwd rabbitmq 2&gt;&amp;1 &gt; /dev/null &amp;&amp; /usr/bin/id -u rabbitmq)
+fi
+if [ "x$RABBITMQ_GID" == "x" ]; then
+	RABBITMQ_GID=$(/usr/bin/getent group rabbitmq 2&gt;&amp;1 &gt; /dev/null &amp;&amp; /usr/bin/id -g rabbitmq)
+fi
 
 # rabbitmq UID|GID were created during install of the rabbitmq RPM
 # we must set these to the same value as on the frontend so we don't
@@ -139,7 +146,7 @@ extendedKeyUsage = 1.3.6.1.5.5.7.3.1
 <file name="/etc/rc.d/rocksconfig.d/post-99-restart-rabbitmq-config" perms="755">
 #!/bin/bash
 #
-for i in `seq 1 360`; # wait for rabbitmq apps configs for 60 minutes
+for i in `seq 1 6`; # wait for rabbitmq apps configs for 1 minute
     do
         for conf in $( ls /opt/rocks/etc | grep rabbitmq_ ); do
                 app_id=${conf#rabbitmq_}

@@ -1,4 +1,5 @@
-# $Id$
+# --------------------------------------------------- -*- Makefile -*- --
+# $Id: Makefile,v 1.3 2012/11/27 00:48:37 phil Exp $
 #
 # @Copyright@
 # 
@@ -54,27 +55,38 @@
 # 
 # @Copyright@
 #
-# $Log$
+# $Log: Makefile,v $
+# Revision 1.3  2012/11/27 00:48:37  phil
+# Copyright Storm for Emerald Boa
+#
+# Revision 1.2  2012/05/06 05:48:43  phil
+# Copyright Storm for Mamba
+#
+# Revision 1.1  2012/02/01 20:42:59  phil
+# Setuptools needed for MYSQL-python build on Rocks v. 6
+#
+#
 
-REDHAT.ROOT = $(CURDIR)/../../
-
-
-
+PKGROOT		= /opt/rocks
+REDHAT.ROOT     = $(CURDIR)/../../
 -include $(ROCKSROOT)/etc/Rules.mk
 include Rules.mk
-include pull.mk
 
-build: $(SRC_DIRS)
-	tar -xvzf $(SOURCE_PKG)
-	@echo "::: Package $(NAME) build complete :::"
 
-install::
-	( \
-	  cd $(SOURCE_DIR); \
-	  $(PY.PATH) setup.py install --root=$(ROOT) \
+build: 
+
+
+$(PACKAGES):
+	gunzip -c $@.tar.gz | $(TAR) -xf -
+	mkdir -p $(ROOT)/$(PKGROOT)
+	(								\
+		cd $@;							\
+		$(PY.PATH) setup.py build;				\
+		$(PY.PATH) setup.py install --root=$(ROOT);		\
 	)
-	@echo "::: Package $(NAME) install complete :::"
+
+install:: $(PACKAGES)
+	
 
 clean::
-	rm -rf $(SOURCE_DIR)
-
+	rm -rf V

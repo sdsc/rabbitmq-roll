@@ -1,4 +1,8 @@
-# $Id$
+#!/bin/sh
+#
+# This file should remain OS independent
+#
+# $Id: bootstrap.sh,v 1.6 2012/11/27 00:49:04 phil Exp $
 #
 # @Copyright@
 # 
@@ -54,27 +58,6 @@
 # 
 # @Copyright@
 #
-# $Log$
+. $ROLLSROOT/etc/bootstrap-functions.sh || exit 1
 
-REDHAT.ROOT = $(CURDIR)/../../
-
-
-
--include $(ROCKSROOT)/etc/Rules.mk
-include Rules.mk
-include pull.mk
-
-build: $(SRC_DIRS)
-	tar -xvzf $(SOURCE_PKG)
-	@echo "::: Package $(NAME) build complete :::"
-
-install::
-	( \
-	  cd $(SOURCE_DIR); \
-	  $(PY.PATH) setup.py install --root=$(ROOT) \
-	)
-	@echo "::: Package $(NAME) install complete :::"
-
-clean::
-	rm -rf $(SOURCE_DIR)
-
+compile_and_install foundation-python-pbr

@@ -1,6 +1,6 @@
 #!/bin/sh
 
-ROCKS_VERSION=`cat /etc/rocks-release 2>/dev/null | awk '{print $3}'`
+ROCKS_VERSION=$(/opt/rocks/bin/python -c 'import rocks; print rocks.version')
 DESC_CMD="git describe --match 'v${ROCKS_VERSION}' 2>/dev/null | sed \"s/v\([0-9\.]*\)-*\([0-9]*\)-*\([0-9a-z]*\)/\1 \2 \3/\""
 DESC=`eval ${DESC_CMD}`
 #DESC=`git describe --match 'v*' 2>/dev/null | sed "s/v\([0-9\.]*\)-*\([0-9]*\)-*\([0-9a-z]*\)/\1 \2 \3/"`
